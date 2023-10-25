@@ -135,6 +135,7 @@ class raw_env(AECEnv):
         for player in range(6):
             self._set_rotation(player)
             self._fill_home_triangle(player)
+        self._set_rotation(0)
 
         # Fill center with empty spaces
         self._fill_center_empty()
@@ -193,6 +194,9 @@ class raw_env(AECEnv):
         if self.render_mode == "rgb_array":
             return self._render_frame()
 
+    """
+    Renders a frame of the game. https://www.gymlibrary.dev/content/environment_creation/#rendering
+    """
     def _render_frame(self):
         if self.window is None and self.render_mode == "human":
             pygame.init()
@@ -202,7 +206,7 @@ class raw_env(AECEnv):
             self.clock = pygame.time.Clock()
 
         canvas = pygame.Surface((self.window_size, self.window_size))
-        canvas.fill((241, 212, 133))
+        canvas.fill((241, 212, 133)) # Fill background
 
         def cubic_to_pixel(r, q, s):
             l = 20
@@ -216,8 +220,10 @@ class raw_env(AECEnv):
                     pixel_x, pixel_y = cubic_to_pixel(r, q, s)
                     cell = self._get_coordinate(r, q, s)
                     if cell == -2:
+                        # Not a valid cell
                         continue
                     elif cell == -1:
+                        # Empty cell
                         pygame.draw.circle(
                             canvas,
                             (154, 132, 73),
@@ -225,7 +231,7 @@ class raw_env(AECEnv):
                             8,
                         )
                     else:
-                        # Now we draw the agent
+                        # Cell with a peg
                         pygame.draw.circle(
                             canvas,
                             self.colors[cell],
@@ -258,12 +264,6 @@ class raw_env(AECEnv):
         # (4 * n + 1)^3 spaces in the board, 6 directions to move for each, 2 types (no-jump/jump)
         return Discrete(2 * 6 * (4 * self.n + 1) * (4 * self.n + 1) * (4 * self.n + 1))
     
-    def _print_board(self):
-        for r in range(-2 * self.n, 2 * self.n + 1):
-            for q in range(-self.n, 2 * self.n + 1):
-                s = -r - q
-                print(self._get_coordinate(r, q, s), end=" ")
-            print()
 
 if __name__ == "__main__":
     env = env(2)
