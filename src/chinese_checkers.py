@@ -213,11 +213,11 @@ class raw_env(AECEnv):
         canvas = pygame.Surface((self.window_size, self.window_size))
         canvas.fill((241, 212, 133)) # Fill background
 
-        def cubic_to_pixel(r, q, s):
+        def cubic_to_pixel(q, r, s):
             l = 20
             screen_center_x, screen_center_y = self.window_size / 2, self.window_size / 2
-            return screen_center_x + l * np.sqrt(3) * (r + 0.5 * q), \
-                screen_center_y + l * 1.5 * q
+            return screen_center_x + l * np.sqrt(3) * (q + 0.5 * r), \
+                screen_center_y + l * 1.5 * r
 
         for r in range(-2 * self.n, 2 * self.n + 1):
             for q in range(-2 * self.n, 2 * self.n + 1):
