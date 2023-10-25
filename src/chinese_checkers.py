@@ -124,7 +124,7 @@ class raw_env(AECEnv):
         n_q = q - o_q
         n_r = r - o_r
         n_s = s - o_s
-        raw_env._rotate_60(n_q, n_r, n_s, times)
+        n_q, n_r, n_s = raw_env._rotate_60(n_q, n_r, n_s, times)
         return n_q + o_q, n_r + o_r, n_s + o_s
 
     def _init_board(self):
