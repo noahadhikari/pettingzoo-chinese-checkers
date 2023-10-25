@@ -7,15 +7,15 @@ from gymnasium.spaces import Discrete
 from pettingzoo import AECEnv
 from pettingzoo.utils import agent_selector
 
-def env():
-    env = raw_env()
+def env(triangle_size=4):
+    env = raw_env(triangle_size)
     return env
 
 class raw_env(AECEnv):
 
     metadata = {"render_modes": ["human"], "name": "chinese_checkers"}
 
-    def __init__(self):
+    def __init__(self, triangle_size):
 
         # Players 0 through 5 are the six players
         self.agents = [r for r in range(6)]
@@ -69,10 +69,10 @@ class raw_env(AECEnv):
                 8: (3, -1, -2)
                 9: (3, 0, -3)
             
-            The other players' initial positions are similar.
+            The other initial positions are similar but rotated clockwise about the origin by 60 degrees for each player.
 
         """
-        self.n = 4
+        self.n = triangle_size
         self._init_board()
 
     @staticmethod
@@ -121,10 +121,11 @@ class raw_env(AECEnv):
         Then rotates the triangle CW by 60 degrees for each player.
         """
         result = []
+        player_0_offset = np.array([1, -self.n - 1, self.n])
         for i in range(self.n):
             for j in range(0, self.n - i):
                 q, r, s = j, -i, i - j
-                result.append(self._rotate_60(q, r, s, player))
+                result.append(self._rotate_60(*(player_0_offset + np.array([q, r, s])), player))
 
         return result
 
@@ -150,24 +151,17 @@ class raw_env(AECEnv):
         return self.observe(agent)
     
     def observe(self, agent):
-        return self.obs
-
-    def _get_actions(self, q, r, s):
-        pass
+        return self.board
 
     def action_space(self, agent):
         # (4 * n + 1)^3 spaces in the board, 6 directions to move for each, 2 types (no-jump/jump)
         return Discrete(2 * 6 * (4 * self.n + 1) * (4 * self.n + 1) * (4 * self.n + 1))
 
 if __name__ == "__main__":
-    result = []
-
-    for y in range(4):
-        for z in range(y + 1):
-            result.append((y - z, y, z))
-        
-    # for y in range(self.n):
-    #     for z in range(y + 1):
-    #         result.append((z - y, y, -z))
-
-    print(result)
+    env = env(2)
+    board = env.observe(0)
+    for i, a in enumerate(board):
+        for j, b in enumerate(a):
+            for k, c in enumerate(b):
+                if c != -2:
+                    print(i - env.n - 1, j - env.n - 1, k - env.n - 1, c)
