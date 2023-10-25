@@ -75,6 +75,13 @@ class raw_env(AECEnv):
         self.n = 4
         self._init_board()
 
+    @staticmethod
+    def _rotate_60(q, r, s, times):
+        """Rotates clockwise."""
+        for _ in range(times):
+            q, r, s = -r, -s, -q
+        return q, r, s
+
     def _init_board(self):
         """
         Board is a 3D array of shape (4n + 1, 4n + 1, 4n + 1), with each element being a number from -2 to 5, inclusive.
@@ -88,11 +95,11 @@ class raw_env(AECEnv):
         # Set the whole board to invalid
         self.board = -2 * np.ones((4 * self.n + 1, 4 * self.n + 1, 4 * self.n + 1), dtype=np.int8)
 
-        # Fill the player starting triangles
+        # Fill player starting triangles
         for player in range(6):
             self._fill_triangle(player)
 
-        # Fill the center with empty spaces
+        # Fill center with empty spaces
         self._fill_center_empty()
         
     def _fill_center_empty(self):
@@ -102,50 +109,24 @@ class raw_env(AECEnv):
                 if abs(q) + abs(r) + abs(s) <= 2 * self.n:
                     self._set_coordinate(q, r, s, -1)
 
-
-    def _get_home_offset(self, player):
-        if player == 0:
-            return (1, -self.n - 1, self.n)
-        elif player == 1:
-            return (self.n + 1, -self.n, -1)
-        elif player == 2:
-            return (1, self.n, -self.n - 1)
-        elif player == 3:
-            return (-self.n, self.n + 1, -1)
-        elif player == 4:
-            return (-2 * self.n, self.n, self.n)
-        elif player == 5:
-            return (-self.n, -self.n, 2 * self.n)
-
     def _fill_triangle(self, player):
-        for coords in self._get_home_coordinates(player):
-            offset = self._get_home_offset(player)
-            self._set_coordinate(**(offset + coords), player)
-
+        for x, y, z in self._get_home_coordinates(player):
+            self._set_coordinate(x, y, z, player)
+    
     def _get_home_coordinates(self, player):
         """
-        Returns (x,y,z) tuples for the relative coordinates of the player's home triangle.
-        Has (0, 0, 0) as the leftmost point of the triangle. Upward-facing for even players,
-        downward-facing for odd players.
+        Returns (x,y,z) tuples for the absolute coordinates of the player's home triangle.
+        Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
+
+        Then rotates the triangle CW by 60 degrees for each player.
         """
         result = []
-
-        if player % 2 == 0:
-            for i in range(self.n):
-                for j in range(0, self.n - i):
-                    q, r, s = j, -i, i - j
-                    result.append((q, r, s))
-        else:
-            for i in range(self.n):
-                for j in range(0, self.n - i):
-                    q, r, s = j, i, -i - j
-                    result.append((q, r, s))
+        for i in range(self.n):
+            for j in range(0, self.n - i):
+                q, r, s = j, -i, i - j
+                result.append(self._rotate_60(q, r, s, player))
 
         return result
-
-        
-    def _triangle_number(n):
-        return n * (n + 1) / 2
 
     def _get_coordinate(self, x, y, z):
         board_x, board_y, board_z = x + 2 * self.n, y + 2 * self.n, z + 2 * self.n
