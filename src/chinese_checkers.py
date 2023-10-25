@@ -73,7 +73,12 @@ class raw_env(AECEnv):
 
         """
         self.n = triangle_size
+        self.rotation = 0
         self._init_board()
+
+    def _set_rotation(self, k):
+        # Set's board rotation so that the kth player is at the top of the board
+        self.rotation = k
 
     @staticmethod
     def _rotate_60(q, r, s, times):
@@ -97,7 +102,8 @@ class raw_env(AECEnv):
 
         # Fill player starting triangles
         for player in range(6):
-            self._fill_triangle(player)
+            self._set_rotation(player)
+            self._fill_home_triangle()
 
         # Fill center with empty spaces
         self._fill_center_empty()
@@ -109,11 +115,11 @@ class raw_env(AECEnv):
                 if abs(q) + abs(r) + abs(s) <= 2 * self.n:
                     self._set_coordinate(q, r, s, -1)
 
-    def _fill_triangle(self, player):
-        for x, y, z in self._get_home_coordinates(player):
-            self._set_coordinate(x, y, z, player)
+    def _fill_home_triangle(self):
+        for x, y, z in self._get_home_coordinates():
+            self._set_coordinate(x, y, z)
     
-    def _get_home_coordinates(self, player):
+    def _get_home_coordinates(self):
         """
         Returns (x,y,z) tuples for the absolute coordinates of the player's home triangle.
         Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
@@ -125,16 +131,18 @@ class raw_env(AECEnv):
         for i in range(self.n):
             for j in range(0, self.n - i):
                 q, r, s = j, -i, i - j
-                result.append(self._rotate_60(*(player_0_offset + np.array([q, r, s])), player))
+                result.append(player_0_offset + np.array([q, r, s]))
 
         return result
 
     def _get_coordinate(self, x, y, z):
-        board_x, board_y, board_z = x + 2 * self.n, y + 2 * self.n, z + 2 * self.n
+        rotated_x, rotated_y, rotated_z = self._rotate_60(x, y, z, self.rotation)
+        board_x, board_y, board_z = rotated_x + 2 * self.n, rotated_y + 2 * self.n, rotated_z + 2 * self.n
         return self.board[board_x][board_y][board_z]
 
     def _set_coordinate(self, x, y, z, value):
-        board_x, board_y, board_z = x + 2 * self.n, y + 2 * self.n, z + 2 * self.n
+        rotated_x, rotated_y, rotated_z = self._rotate_60(x, y, z, self.rotation)
+        board_x, board_y, board_z = rotated_x + 2 * self.n, rotated_y + 2 * self.n, rotated_z + 2 * self.n
         self.board[board_x][board_y][board_z] = value
 
     def reset(self, seed=None, options=None):
