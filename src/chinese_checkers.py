@@ -82,6 +82,15 @@ class raw_env(AECEnv):
             q, r, s = -r, -s, -q
         return q, r, s
 
+    @staticmethod
+    def _rotate_60_about_pt(q, r, s, o_q, o_r, o_s, times):
+        """Rotates clockwise."""
+        n_q = q - o_q
+        n_r = r - o_r
+        n_s = s - o_s
+        raw_env._rotate_60(n_q, n_r, n_s, times)
+        return n_q + o_q, n_r + o_r, n_s + o_s
+
     def _init_board(self):
         """
         Board is a 3D array of shape (4n + 1, 4n + 1, 4n + 1), with each element being a number from -2 to 5, inclusive.
@@ -89,8 +98,6 @@ class raw_env(AECEnv):
              -2: invalid space
              -1: empty space
             0-5: player number of occupying peg
-
-        The observation space is just this board.
         """
         # Set the whole board to invalid
         self.board = -2 * np.ones((4 * self.n + 1, 4 * self.n + 1, 4 * self.n + 1), dtype=np.int8)
@@ -150,12 +157,33 @@ class raw_env(AECEnv):
     def observation_space(self, agent):
         return self.observe(agent)
     
+    @staticmethod
+    def _cube_to_axial(q, r, s):
+        return q, r
+    
+    @staticmethod
+    def _axial_to_cube(q, r):
+        return q, r, -q - r
+    
+    def _compute_axial_board(self):
+        result = -2 * np.ones((4 * self.n + 1, 4 * self.n + 1), dtype=np.int8)
+        for q in range(-2 * self.n, 2 * self.n + 1):
+            for r in range(-2 * self.n, 2 * self.n + 1):
+                s = -q - r
+                result[q, r] = self._get_coordinate(q, r, s)
+        return result
+
     def observe(self, agent):
-        return self.board
+        """ The observation is just the board, regardless of agent.
+            To counteract the sparsity of cube coordinates, we convert it to axial
+                (q, r, s) -> (q, r)
+            first.
+        """
+        return self._compute_axial_board()
 
     def action_space(self, agent):
-        # (4 * n + 1)^3 spaces in the board, 6 directions to move for each, 2 types (no-jump/jump)
-        return Discrete(2 * 6 * (4 * self.n + 1) * (4 * self.n + 1) * (4 * self.n + 1))
+        # (4 * n + 1)^2 spaces in the (axial) board, 6 directions to move for each, 2 types (no-jump/jump)
+        return Discrete(2 * 6 * (4 * self.n + 1) * (4 * self.n + 1))
 
 if __name__ == "__main__":
     env = env(2)
