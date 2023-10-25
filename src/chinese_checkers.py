@@ -277,7 +277,8 @@ class raw_env(AECEnv):
         for q in range(-2 * self.n, 2 * self.n + 1):
             for r in range(-2 * self.n, 2 * self.n + 1):
                 s = -q - r
-                result[q, r] = self._get_coordinate(q, r, s)
+                if abs(q) + abs(r) + abs(s) <= 2 * self.n:
+                    result[q, r] = self._get_coordinate(q, r, s)
         return result
 
     def observe(self, agent):
@@ -293,7 +294,7 @@ class raw_env(AECEnv):
         return Discrete(2 * 6 * (4 * self.n + 1) * (4 * self.n + 1))
 
 if __name__ == "__main__":
-    env = env(2)
+    env = env(4)
     board = env.observe(0)
     # for i, a in enumerate(board):
     #     for j, b in enumerate(a):
