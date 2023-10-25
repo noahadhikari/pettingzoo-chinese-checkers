@@ -219,11 +219,11 @@ class raw_env(AECEnv):
             return screen_center_x + l * np.sqrt(3) * (q + 0.5 * r), \
                 screen_center_y + l * 1.5 * r
 
-        for r in range(-2 * self.n, 2 * self.n + 1):
-            for q in range(-2 * self.n, 2 * self.n + 1):
+        for q in range(-2 * self.n, 2 * self.n + 1):
+            for r in range(-2 * self.n, 2 * self.n + 1):
                 for s in range(-2 * self.n, 2 * self.n + 1):
-                    pixel_x, pixel_y = cubic_to_pixel(r, q, s)
-                    cell = self._get_coordinate(r, q, s)
+                    pixel_x, pixel_y = cubic_to_pixel(q, r, s)
+                    cell = self._get_coordinate(q, r, s)
                     if cell == -2:
                         # Not a valid cell
                         continue
