@@ -162,8 +162,6 @@ class raw_env(AECEnv):
         """
         Returns (x,y,z) tuples for the absolute coordinates of the player's home triangle.
         Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
-
-        Then rotates the triangle CW by 60 degrees for each player.
         """
         result = []
         player_0_offset = np.array([1, -self.n - 1, self.n])
@@ -201,10 +199,10 @@ class raw_env(AECEnv):
         if self.render_mode == "rgb_array":
             return self._render_frame()
 
-    """
-    Renders a frame of the game. https://www.gymlibrary.dev/content/environment_creation/#rendering
-    """
     def _render_frame(self):
+        """
+        Renders a frame of the game. https://www.gymlibrary.dev/content/environment_creation/#rendering
+        """
         if self.window is None and self.render_mode == "human":
             pygame.init()
             pygame.display.init()
