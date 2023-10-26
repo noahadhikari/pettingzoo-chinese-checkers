@@ -9,7 +9,10 @@ pyvirtualdisplay==3.0
 torch==1.13.1
 opencv-python==4.6.0.66
 ipdb==0.13.9
+stable-baselines3==2.1.0
 swig==4.0.2
 box2d-py==2.3.8
 tqdm==4.66.1
+pettingzoo==1.24.1
+pygame==2.1.
 pyyaml==6.0.1
