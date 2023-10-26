@@ -11,13 +11,6 @@ from pettingzoo.utils import agent_selector, wrappers
 
 import pygame
 
-def env(triangle_size=4):
-    env = raw_env(triangle_size)
-    env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
-    env = wrappers.AssertOutOfBoundsWrapper(env)
-    env = wrappers.OrderEnforcingWrapper(env)
-    return env
-
 class ChineseCheckersPosition:
     direction_map = {
         0: (+1,  0, -1),
@@ -40,7 +33,7 @@ class ChineseCheckersPosition:
             self.r + direction_delta[1] * multiplier
         )
 
-class ChineseCheckersAction:
+class ChineseCheckersMove:
     def __init__(self, q, r, direction, is_jump):
         self.position = ChineseCheckersPosition(q, r)
         self.direction = direction
@@ -125,9 +118,9 @@ class ChineseCheckers:
         self.rotation = 0
         self.init_board()
 
-    def _set_rotation(self, k: int):
+    def _set_rotation(self, player: int):
         # Set's board rotation so that the kth player is at the top of the board
-        self.rotation = k
+        self.rotation = player
 
     @staticmethod
     def _rotate_60(q: int, r: int, s: int, times: int):
@@ -165,6 +158,8 @@ class ChineseCheckers:
         # Fill center with empty spaces
         self._fill_center_empty()
         
+        self.game_over = False
+        
     def _fill_center_empty(self):
         for q in range(-self.n, self.n + 1):
             for r in range(-self.n, self.n + 1):
@@ -182,11 +177,25 @@ class ChineseCheckers:
         Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
         """
         result = []
-        player_0_offset = np.array([1, -self.n - 1, self.n])
+        offset = np.array([1, -self.n - 1, self.n])
         for i in range(self.n):
             for j in range(i, self.n):
                 q, r, s = j, -i, i - j
-                result.append(player_0_offset + np.array([q, r, s]))
+                result.append(offset + np.array([q, r, s]))
+
+        return result
+    
+    def _get_target_coordinates(self):
+        """
+        Returns (q, r, s) tuples for the absolute coordinates of the player's home triangle.
+        Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
+        """
+        result = []
+        offset = np.array([-self.n, self.n + 1, -1])
+        for i in range(self.n):
+            for j in range(0, self.n - i):
+                q, r, s = j, i, -i - j
+                result.append(offset + np.array([q, r, s]))
 
         return result
     
@@ -280,23 +289,31 @@ class ChineseCheckers:
                     result[q, r] = self._get_board_value(q, r, s)
         return result
     
-    def _is_action_legal(self, player, action: ChineseCheckersAction):
+    def axial_board(self, player):
+        self._set_rotation(player)
+        board = self._axial_board()
+        self._set_rotation(0)
+        return board
+    
+    # Helper function for `is_move_legal` that assumes the player's home triangle
+    # is at the top of the board.
+    def _is_move_legal(self, player, move: ChineseCheckersMove):
         # Check that the start position is in bounds for the star board
-        if (not self._in_bounds(action.position.q, action.position.r, action.position.s)):
+        if (not self._in_bounds(move.position.q, move.position.r, move.position.s)):
             return False
         
         # The start position must contain one of the player's pegs
         start_position_value = self._get_board_value(
-            action.position.q, 
-            action.position.r, 
-            action.position.s
+            move.position.q, 
+            move.position.r, 
+            move.position.s
         )
         if (start_position_value != player):
-            print(start_position_value, action.position.q, action.position.r, player)
+            print(start_position_value, move.position.q, move.position.r, player)
             return False
         
         # The moved to position must be in bounds
-        moved_to = action.moved_position()
+        moved_to = move.moved_position()
         if (not self._in_bounds(moved_to.q, moved_to.r, moved_to.s)):
             return False
         
@@ -305,10 +322,10 @@ class ChineseCheckers:
         if (moved_to_value != ChineseCheckers.EMPTY_SPACE):
             return False
         
-        # If an action is a jump, there must be a direct neighbor between the
+        # If an move is a jump, there must be a direct neighbor between the
         # start position and the moved to position.
-        if action.is_jump:
-            direct_neighbor = action.position.neighbor(action.direction)
+        if move.is_jump:
+            direct_neighbor = move.position.neighbor(move.direction)
             if (not self._in_bounds(direct_neighbor.q, direct_neighbor.r, direct_neighbor.s)):
                 return False
             direct_neighbor_value = self._get_board_value(
@@ -320,137 +337,40 @@ class ChineseCheckers:
                 return False
         return True
     
-    def is_action_legal(self, player: int, action: ChineseCheckersAction) -> bool:
+    # Checks whether a move is legal for the specified player
+    def is_move_legal(self, player: int, move: ChineseCheckersMove) -> bool:
         self._set_rotation(player)
-        is_legal = self._is_action_legal(player, action)
+        is_legal = self._is_move_legal(player, move)
         self._set_rotation(0)
         return is_legal
     
-    def move(self, player: int, action: ChineseCheckersAction):
-        assert self.is_action_legal(player, action)
+    # Executes the move for the specified player. Errors if move is illegal.
+    # Returns the number of the player's pegs within the target triangle.
+    def move(self, player: int, move: ChineseCheckersMove) -> int:
+        assert self.is_move_legal(player, move)
+        score = 0
         self._set_rotation(player)
-        src_pos = action.position
+        src_pos = move.position
         self._set_coordinate(src_pos.q, src_pos.r, src_pos.s, ChineseCheckers.EMPTY_SPACE)
-        dst_pos = action.moved_position()
+        dst_pos = move.moved_position()
+        for q, r, s in self._get_target_coordinates():
+            if self._get_board_value(q, r, s) == player:
+                score += 1
         self._set_coordinate(dst_pos.q, dst_pos.r, dst_pos.s, player)
         self._set_rotation(0)
-        
-class raw_env(AECEnv):
-    metadata = {"render_modes": ["rgb_array"], "name": "chinese_checkers"}
+        return score
 
-    def __init__(self, triangle_size: int, max_iters: int = 200):
-        self.max_iters = max_iters
-
-        # Players 0 through 5 are the six players
-        self.possible_agents = [f"player_{r}" for r in range(6)]
-
-        self.agent_name_mapping = dict(
-            zip(self.possible_agents, list(range(len(self.possible_agents))))
-        )
-
-        self.window_size = 512  # The size of the PyGame window
-
-        self.n = triangle_size
-        self.rotation = 0
-        self.game = ChineseCheckers(triangle_size)
-        self.game.init_board()
-
-    def reset(self, seed=None, options=None):
-        self.agents = self.possible_agents[:]
-        self.rewards = {agent: 0 for agent in self.agents}
-        self._cumulative_rewards = {agent: 0 for agent in self.agents}
-        self.terminations = {agent: False for agent in self.agents}
-        self.truncations = {agent: False for agent in self.agents}
-        self.infos = {agent: {} for agent in self.agents}
-
-        self.game.init_board()
-        self.num_moves = 0
-
-        self._agent_selector = agent_selector(self.agents)
-        self.agent_selection = self._agent_selector.next()
-
-    def step(self, action):
-        if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:
-            self._was_dead_step(action)
-            return
-        
-        agent = self.agent_selection
-        player: int = self.agent_name_mapping[agent]
-
-        if not self.game.is_action_legal(player, action):
-            raise Exception("Played an illegal move.")
-
-        self.game.move(player, action)
-
-        # TODO: Check game over, set terminations, rewards, etc.
-
-        self._cumulative_rewards[agent] = 0
-        self.state[self.agent_selection] = action
-
-        # collect reward if it is the last agent to act
-        if self._agent_selector.is_last():
-            self.rewards[self.agents[0]], self.rewards[self.agents[1]] = REWARD_MAP[
-                (self.state[self.agents[0]], self.state[self.agents[1]])
-            ]
-
-            self.num_moves += 1
-            self.truncations = {
-                agent: self.num_moves >= self.max_iters for agent in self.agents
-            }
-
-            for i in self.agents:
-                self.observations[i] = self.state[
-                    self.agents[1 - self.agent_name_mapping[i]]
-                ]
-        else:
-            self.state[self.agents[1 - self.agent_name_mapping[agent]]] = NONE
-            self._clear_rewards()
-
-        self.agent_selection = self._agent_selector.next()
-        self._accumulate_rewards()
-
-    def render(self):
-        return self.game.render()
-
-    def observation_space(self, agent):
-        """ The observation is just the board, regardless of agent.
-            To counteract the sparsity of cube coordinates, we convert it to axial
-                (q, r, s) -> (q, r)
-            first.
-            -2: invalid space
-            -1: empty space
-            0-5: player number of occupying peg
-        """
-        return self.observe(agent)
-
-    def observe(self, agent):
-        """ The observation is just the board, regardless of agent.
-            To counteract the sparsity of cube coordinates, we convert it to axial
-                (q, r, s) -> (q, r)
-            first.
-            -2: invalid space
-            -1: empty space
-            0-5: player number of occupying peg
-        """
-        return Box(low=-2, high=5, shape=(4 * self.n + 1, 4 * self.n + 1), dtype=np.int8)
-
-    def action_space(self, agent):
-        """ (4 * n + 1)^2 spaces in the (axial) board, 6 directions to move for each, 2 types (no-jump/jump)
-        
-        Action is a tuple of (q, r, direction, is_jump), where
-        
-        q, r: axial coordinates of the peg to move
-        direction: 0-5, the direction to move in, similar to polar coordinate increments of pi/3, where 0 is right, 1 is top-right, etc.
-        is_jump: 0 or 1, whether to jump over a peg
-        
-        """
-        return MultiDiscrete([4 * self.n + 1, 4 * self.n + 1, 6, 2], dtype=np.int8)
-
-if __name__ == "__main__":
-    env = raw_env(4)
-    env.reset()
-    board = env.observe(0)
-    env.game.move(0, ChineseCheckersAction(2, -6, 4, True))
-    frame = env.render()
-    plt.imshow(frame)
-    plt.savefig("test.png")
+    def did_player_win(self, player: int) -> bool:
+        self._set_rotation(player)
+        did_win = True
+        for q, r, s in self._get_target_coordinates(q, r, s):
+            if self._get_board_value(q, r, s) != player:
+                did_win = False
+                break
+        self._set_rotation(0)
+        if did_win:
+            self.game_over = True
+        return did_win
+    
+    def is_game_over(self) -> bool:
+        return self.game_over
