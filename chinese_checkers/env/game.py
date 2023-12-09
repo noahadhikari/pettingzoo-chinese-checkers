@@ -1,9 +1,10 @@
 import functools
 
-import gymnasium
 import numpy as np
 from matplotlib import pyplot as plt
+from enum import IntEnum
 
+import gymnasium
 from gymnasium.spaces import Box, MultiDiscrete
 
 from pettingzoo import AECEnv
@@ -11,31 +12,39 @@ from pettingzoo.utils import agent_selector, wrappers
 
 import pygame
 
-class ChineseCheckersPosition:
+class Direction(IntEnum):
+    Right = 0
+    UpRight = 1
+    UpLeft = 2
+    Left = 3
+    DownLeft = 4
+    DownRight = 5
+
+class Position:
     direction_map = {
-        0: (+1,  0, -1),
-        1: (+1, -1,  0),
-        2: ( 0, -1, +1),
-        3: (-1,  0, +1),
-        4: (-1, +1,  0),
-        5: ( 0, +1, -1)
+        Direction.Right    : (+1,  0, -1),
+        Direction.UpRight  : (+1, -1,  0),
+        Direction.UpLeft   : ( 0, -1, +1),
+        Direction.Left     : (-1,  0, +1),
+        Direction.DownLeft : (-1, +1,  0),
+        Direction.DownRight: ( 0, +1, -1)
     }
 
-    def __init__(self, q, r):
+    def __init__(self, q: int, r: int):
         self.q = q
         self.r = r
         self.s = -q - r
 
-    def neighbor(self, direction, multiplier=1):
-        direction_delta = ChineseCheckersPosition.direction_map[direction]
-        return ChineseCheckersPosition(
-            self.q + direction_delta[0] * multiplier,
-            self.r + direction_delta[1] * multiplier
+    def neighbor(self, direction: Direction, multiplier: int = 1):
+        q_delta, r_delta, _ = Position.direction_map[direction]
+        return Position(
+            self.q + q_delta * multiplier,
+            self.r + r_delta * multiplier
         )
 
-class ChineseCheckersMove:
-    def __init__(self, q, r, direction, is_jump):
-        self.position = ChineseCheckersPosition(q, r)
+class Move:
+    def __init__(self, q: int, r: int, direction: Direction, is_jump: bool):
+        self.position = Position(q, r)
         self.direction = direction
         self.is_jump = is_jump
         
@@ -43,26 +52,25 @@ class ChineseCheckersMove:
         multiplier = 2 if self.is_jump else 1
         return self.position.neighbor(self.direction, multiplier)
 
+    def __str__(self):
+        return f"Move({self.position.q}, {self.position.r}, {self.direction}, {self.is_jump})"
+
 class ChineseCheckers:
     colors = {
-        -1: (154, 132, 73),
-        0: (255, 0, 0),
-        1: (0, 0, 0),
-        2: (255, 255, 0),
-        3: (0, 255, 0),
-        4: (0, 0, 255),
-        5: (255, 255, 255),
+        -1: (154, 132, 73), # empty cell
+        0: (255, 0, 0), # red
+        1: (0, 0, 0), # black
+        2: (255, 255, 0), # yellow
+        3: (0, 255, 0), # green
+        4: (0, 0, 255), # blue
+        5: (255, 255, 255), # white
     }
 
     OUT_OF_BOUNDS = -2
     EMPTY_SPACE = -1
 
     def __init__(self, triangle_size: int):
-
-        # Players 0 through 5 are the six players
-        self.window_size = 512  # The size of the PyGame window
-        self.window = None
-        """
+        r"""
         At the beginning of the game:
             Player 0 is at the top of the board,
             Player 1 is top-right,
@@ -116,11 +124,19 @@ class ChineseCheckers:
         """
         self.n = triangle_size
         self.rotation = 0
-        self.init_board()
+
+        self.init_game()
+
+        # Players 0 through 5 are the six players
+        self.window_size = 512  # The size of the PyGame window
+        self.window = None
 
     def _set_rotation(self, player: int):
         # Set's board rotation so that the kth player is at the top of the board
         self.rotation = player
+
+    def _unset_rotation(self):
+        self.rotation = None
 
     @staticmethod
     def _rotate_60(q: int, r: int, s: int, times: int):
@@ -135,73 +151,102 @@ class ChineseCheckers:
         n_q = q - o_q
         n_r = r - o_r
         n_s = s - o_s
-        n_q, n_r, n_s = raw_env._rotate_60(n_q, n_r, n_s, times)
+        n_q, n_r, n_s = ChineseCheckers._rotate_60(n_q, n_r, n_s, times)
         return n_q + o_q, n_r + o_r, n_s + o_s
 
-    def init_board(self):
+    def init_game(self):
         """
         Board is a 3D array of shape (4n + 1, 4n + 1, 4n + 1), with each element being a number from -2 to 5, inclusive.
-
              -2: invalid space
              -1: empty space
             0-5: player number of occupying peg
         """
+        def _fill_center_empty():
+            self._set_rotation(0)
+            for q in range(-self.n, self.n + 1):
+                for r in range(-self.n, self.n + 1):
+                    s = -q - r
+                    if abs(q) + abs(r) + abs(s) <= 2 * self.n:
+                        self._set_coordinate(q, r, s, ChineseCheckers.EMPTY_SPACE)
+            self._unset_rotation()
+
+        def _fill_home_triangle(player: int):
+            self._set_rotation(player)
+            for q, r, s in self._get_home_coordinates():
+                self._set_coordinate(q, r, s, player)
+            self._unset_rotation()
+        
         # Set the whole board to invalid
         self.board = ChineseCheckers.OUT_OF_BOUNDS * np.ones((4 * self.n + 1, 4 * self.n + 1, 4 * self.n + 1), dtype=np.int8)
 
         # Fill player starting triangles
         for player in range(6):
-            self._set_rotation(player)
-            self._fill_home_triangle(player)
-        self._set_rotation(0)
+            _fill_home_triangle(player)
 
         # Fill center with empty spaces
-        self._fill_center_empty()
+        _fill_center_empty()
         
         self.game_over = False
-        
-    def _fill_center_empty(self):
-        for q in range(-self.n, self.n + 1):
-            for r in range(-self.n, self.n + 1):
-                s = -q - r
-                if abs(q) + abs(r) + abs(s) <= 2 * self.n:
-                    self._set_coordinate(q, r, s, ChineseCheckers.EMPTY_SPACE)
-
-    def _fill_home_triangle(self, player: int):
-        for q, r, s in self._get_home_coordinates():
-            self._set_coordinate(q, r, s, player)
+        self.last_move = Move(0, 0, Direction.Right, 0)
     
+    def get_legal_moves(self, player: int):
+        """
+        Returns a list of legal moves for the specified player.
+        """
+        self._set_rotation(player)
+        moves = []
+        for q in range(-2 * self.n, 2 * self.n + 1):
+            for r in range(-2 * self.n, 2 * self.n + 1):
+                for direction in Direction:
+                    for is_jump in [False, True]:
+                        move = Move(q, r, direction, is_jump)
+                        if self._is_move_legal(player, move):
+                            moves.append(move)
+        self._unset_rotation()
+        return moves
+
     def _get_home_coordinates(self):
         """
         Returns (q, r, s) tuples for the absolute coordinates of the player's home triangle.
         Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
         """
-        result = []
+        assert self.rotation is not None
         offset = np.array([1, -self.n - 1, self.n])
         for i in range(self.n):
             for j in range(i, self.n):
                 q, r, s = j, -i, i - j
-                result.append(offset + np.array([q, r, s]))
-
-        return result
+                yield offset + np.array([q, r, s])
     
+    def _home_values(self):
+        """
+        Generates all values within the player's target triangle.
+        """
+        assert self.rotation is not None
+        for q, r, s in self._get_home_coordinates():
+            yield self._get_board_value(q, r, s)
+
     def _get_target_coordinates(self):
         """
         Returns (q, r, s) tuples for the absolute coordinates of the player's home triangle.
         Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
         """
-        result = []
+        assert self.rotation is not None
         offset = np.array([-self.n, self.n + 1, -1])
         for i in range(self.n):
             for j in range(0, self.n - i):
                 q, r, s = j, i, -i - j
-                result.append(offset + np.array([q, r, s]))
+                yield offset + np.array([q, r, s])
 
-        return result
+    def _target_values(self):
+        """
+        Generates all values within the player's target triangle.
+        """
+        assert self.rotation is not None
+        for q, r, s in self._get_target_coordinates():
+            yield self._get_board_value(q, r, s)
     
     def _in_bounds(self, q: int, r: int, s: int):
-        rotated_q, rotated_r, rotated_s = self._rotate_60(q, r, s, self.rotation)
-        board_q, board_r, board_s = rotated_q + 2 * self.n, rotated_r + 2 * self.n, rotated_s + 2 * self.n
+        board_q, board_r, board_s = q + 2 * self.n, r + 2 * self.n, s + 2 * self.n
         if (board_q < 0 or board_q >= 4 * self.n + 1 or \
             board_r < 0 or board_r >= 4 * self.n + 1 or \
             board_s < 0 or board_s >= 4 * self.n + 1):
@@ -210,11 +255,11 @@ class ChineseCheckers:
         start = self._get_board_value(q, r, s)
         return start != ChineseCheckers.OUT_OF_BOUNDS
         
-
     def _get_board_value(self, q: int, r: int, s: int):
         """
         Given q, r, s coordinates in the current viewing perspective, get the board value.
         """
+        assert self.rotation is not None
         rotated_q, rotated_r, rotated_s = self._rotate_60(q, r, s, self.rotation)
         board_q, board_r, board_s = rotated_q + 2 * self.n, rotated_r + 2 * self.n, rotated_s + 2 * self.n
         return self.board[board_q, board_r, board_s]
@@ -223,6 +268,7 @@ class ChineseCheckers:
         """
         Given q, r, s coordinates in the current viewing perspective, set the board value.
         """
+        assert self.rotation is not None
         rotated_q, rotated_r, rotated_s = self._rotate_60(q, r, s, self.rotation)
         board_q, board_r, board_s = rotated_q + 2 * self.n, rotated_r + 2 * self.n, rotated_s + 2 * self.n
         self.board[board_q, board_r, board_s] = value
@@ -230,7 +276,7 @@ class ChineseCheckers:
     def render(self, player: int = 0):
         self._set_rotation(player)
         frame = self._render_frame()
-        self._set_rotation(0)
+        self._unset_rotation()
         return frame
 
     def _render_frame(self):
@@ -245,28 +291,28 @@ class ChineseCheckers:
         canvas = pygame.Surface((self.window_size, self.window_size))
         canvas.fill((241, 212, 133)) # Fill background
 
-        def cubic_to_pixel(q: int, r: int, s: int):
+        def axial_to_pixel(q: int, r: int):
             l = 20
             screen_center_x, screen_center_y = self.window_size / 2, self.window_size / 2
             return screen_center_x + l * np.sqrt(3) * (q + 0.5 * r), \
                 screen_center_y + l * 1.5 * r
 
+        axial_board = self.get_axial_board(0)
         for q in range(-2 * self.n, 2 * self.n + 1):
             for r in range(-2 * self.n, 2 * self.n + 1):
-                for s in range(-2 * self.n, 2 * self.n + 1):
-                    pixel_x, pixel_y = cubic_to_pixel(q, r, s)
-                    cell = self._get_board_value(q, r, s)
-                    if cell == ChineseCheckers.OUT_OF_BOUNDS:
-                        # Not a valid cell
-                        continue
-                    else:
-                        # Cell with a peg
-                        pygame.draw.circle(
-                            canvas,
-                            self.colors[cell],
-                            (pixel_x, pixel_y),
-                            8,
-                        )
+                pixel_x, pixel_y = axial_to_pixel(q, r)
+                cell = axial_board[q, r]
+                if cell == ChineseCheckers.OUT_OF_BOUNDS:
+                    # Not a valid cell
+                    continue
+                else:
+                    # Cell with a peg
+                    pygame.draw.circle(
+                        canvas,
+                        self.colors[cell],
+                        (pixel_x, pixel_y),
+                        8,
+                    )
 
         return np.transpose(
             np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
@@ -280,24 +326,38 @@ class ChineseCheckers:
     def _axial_to_cube(q: int, r: int):
         return q, r, -q - r
     
-    def _axial_board(self):
+    def _get_axial_board(self):
+        r""""Helper function for get_axial_board"""
+        assert self.rotation is not None 
         result = -2 * np.ones((4 * self.n + 1, 4 * self.n + 1), dtype=np.int8)
         for q in range(-2 * self.n, 2 * self.n + 1):
             for r in range(-2 * self.n, 2 * self.n + 1):
                 s = -q - r
-                if abs(q) + abs(r) + abs(s) <= 2 * self.n:
+                if abs(q) + abs(r) + abs(s) <= 4 * self.n + 1:
                     result[q, r] = self._get_board_value(q, r, s)
-        return result
+        return result   
+
+    def _is_player(self, value):
+        return 0 <= value < 6
+
+    def _rotate_player_number(self, peg):
+        assert self.rotation is not None
+        return (peg - self.rotation) % 6 if self._is_player(peg) else peg
     
-    def axial_board(self, player):
+    def get_axial_board(self, player):
+        r"""
+        Returns the current game board in axial coordinates from the perspective of the specified player.
+        """
         self._set_rotation(player)
-        board = self._axial_board()
-        self._set_rotation(0)
+        board = self._get_axial_board()
+        board = np.vectorize(self._rotate_player_number)(board)
+        self._unset_rotation()
         return board
     
     # Helper function for `is_move_legal` that assumes the player's home triangle
     # is at the top of the board.
-    def _is_move_legal(self, player, move: ChineseCheckersMove):
+    def _is_move_legal(self, player, move: Move):
+        assert self.rotation is not None
         # Check that the start position is in bounds for the star board
         if (not self._in_bounds(move.position.q, move.position.r, move.position.s)):
             return False
@@ -309,7 +369,6 @@ class ChineseCheckers:
             move.position.s
         )
         if (start_position_value != player):
-            print(start_position_value, move.position.q, move.position.r, player)
             return False
         
         # The moved to position must be in bounds
@@ -337,39 +396,36 @@ class ChineseCheckers:
                 return False
         return True
     
-    # Checks whether a move is legal for the specified player
-    def is_move_legal(self, player: int, move: ChineseCheckersMove) -> bool:
-        self._set_rotation(player)
+    # Checks whether a move is legal for the current player
+    def is_move_legal(self, move: Move) -> bool:
+        assert self.rotation is not None
+        player = self.rotation
         is_legal = self._is_move_legal(player, move)
-        self._set_rotation(0)
         return is_legal
     
     # Executes the move for the specified player. Errors if move is illegal.
     # Returns the number of the player's pegs within the target triangle.
-    def move(self, player: int, move: ChineseCheckersMove) -> int:
-        assert self.is_move_legal(player, move)
-        score = 0
+    def move(self, player: int, move: Move) -> int:
         self._set_rotation(player)
+        assert self.is_move_legal(move)
+        score = 0
         src_pos = move.position
+        print(player, move)
         self._set_coordinate(src_pos.q, src_pos.r, src_pos.s, ChineseCheckers.EMPTY_SPACE)
         dst_pos = move.moved_position()
-        for q, r, s in self._get_target_coordinates():
-            if self._get_board_value(q, r, s) == player:
-                score += 1
+        for value in self._target_values():
+            score += 1 if value == player else 0
         self._set_coordinate(dst_pos.q, dst_pos.r, dst_pos.s, player)
-        self._set_rotation(0)
+        self.last_move = move
+        self._unset_rotation()
         return score
 
     def did_player_win(self, player: int) -> bool:
         self._set_rotation(player)
-        did_win = True
-        for q, r, s in self._get_target_coordinates(q, r, s):
-            if self._get_board_value(q, r, s) != player:
-                did_win = False
-                break
-        self._set_rotation(0)
+        did_win = all([value == player for value in self._target_values()])
         if did_win:
             self.game_over = True
+        self._unset_rotation()
         return did_win
     
     def is_game_over(self) -> bool:
