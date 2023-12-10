@@ -12,10 +12,10 @@ from pettingzoo.utils import agent_selector, wrappers
 
 import pygame
 from chinese_checkers.env.game import ChineseCheckers, Move, Position
-from chinese_checkers.env.chinese_checkers_utils import action_to_move, get_legal_move_mask
+from chinese_checkers.env.chinese_checkers_utils import action_to_move, get_legal_move_mask, rotate_observation
 
-def make_env(triangle_size=4):
-    env = raw_env(triangle_size)
+def env(**kwargs):
+    env = raw_env(**kwargs)
     env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
     env = wrappers.AssertOutOfBoundsWrapper(env)
     env = wrappers.OrderEnforcingWrapper(env)
@@ -24,7 +24,7 @@ def make_env(triangle_size=4):
 class raw_env(AECEnv):
     metadata = {"render_modes": ["rgb_array"], "name": "chinese_checkers"}
 
-    def __init__(self, triangle_size: int, max_iters: int = 200):
+    def __init__(self, triangle_size: int, render_mode: str | None = None, max_iters: int = 200):
         self.max_iters = max_iters
 
         # Players 0 through 5 are the six players
@@ -39,7 +39,7 @@ class raw_env(AECEnv):
         self.n = triangle_size
         self.rotation = 0
         self.game = ChineseCheckers(triangle_size)
-        self.action_space_dim = (4 * self.n + 1) * (4 * self.n + 1) * 6 * 2
+        self.action_space_dim = (4 * self.n + 1) * (4 * self.n + 1) * 6 * 2 + 1
 
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents[:]
@@ -50,9 +50,6 @@ class raw_env(AECEnv):
         self.infos = {agent: {} for agent in self.agents}
 
         self.game.init_game()
-        self.observations = {
-            agent: self.game.get_axial_board(self.agent_name_mapping[agent]) for agent in self.agents
-        }
         self.num_moves = 0
 
         self._agent_selector = agent_selector(self.agents)
@@ -90,12 +87,10 @@ class raw_env(AECEnv):
             self.truncations = {
                 agent: self.num_moves >= self.max_iters for agent in self.agents
             }
-            
-        # if jump then reorder the agent selector so the current player is the next player
-        # if not self.game.last_move.is_jump:
-        #     self.agent_selection = self._agent_selector.next()
-        self.agent_selection = self._agent_selector.next()
-
+        
+        # if jump then don't advance the current player
+        if move == Move.END_TURN or not move.is_jump:
+            self.agent_selection = self._agent_selector.next()
 
     def render(self):
         return self.game.render()
@@ -111,27 +106,51 @@ class raw_env(AECEnv):
             0-5: player number of occupying peg
         """
         return {
-            "observation": Box(low=-2, high=5, shape=(4 * self.n + 1, 4 * self.n + 1)),
+            "observation": Box(low=-2, high=5, shape=(4 * self.n + 1, 4 * self.n + 1, 8)),
             "action_mask": Box(low=0, high=1, shape=(self.action_space_dim,), dtype=np.int8)
         }
         
     def observe(self, agent):
-        """ The observation is just the board with the current player at the top, regardless of agent.
-            To counteract the sparsity of cube coordinates, we convert it to axial
-                (q, r, s) -> (q, r)
-            first.
-            -2: invalid space
-            -1: empty space
-            0-5: player number of occupying peg
+        """ 
+        The observation is a (4n + 1) x (4n + 1) board with 8 channels. The 8 channels correspond to:
+        - Channels 0: Current player's pieces, 1 if that position has the current player's peg, 0 if not
+        - Channels 1-5: Other player's pieces
+        - Channel 6: Source pegs of all previous jumps for this player. If no jumps, then all zeros.
+        - Channel 7: Last jump destination peg: If no jumps, then all zeros.
         """
-        return {
-            "observation": self.game.get_axial_board(self.agent_name_mapping[agent]),
-            "action_mask": get_legal_move_mask(self.game, self.agent_name_mapping[agent])
-        }
+        player = self.agent_name_mapping[agent]
+        board = self.game.get_axial_board(player)
 
+        jump_sources_channel = -2 * np.zeros((4 * self.game.n + 1, 4 * self.game.n + 1), dtype=np.int8)
+        last_jump_destination_channel = -2 * np.zeros((4 * self.game.n + 1, 4 * self.game.n + 1), dtype=np.int8)
+        
+        last_jump = self.game.get_last_jump(player)
+        if last_jump:
+            jumps = self.game.get_jumps(player)
+            for jump in jumps:
+                jump_sources_channel[jump.position.q, jump.position.r] = 1
+            last_jump_destination = last_jump.moved_position()
+            last_jump_destination_channel[last_jump_destination.q, last_jump_destination.r] = 1
+
+        observation = np.stack(
+            [(board == player).astype(np.int8) for player in range(6)] + 
+            [jump_sources_channel, last_jump_destination_channel],
+            axis=-1
+        )
+
+        return {
+            "observation": observation,
+            "action_mask": get_legal_move_mask(self.game, player)
+        }
+    
+    def action_mask(self):
+        agent: str = self.agent_selection
+        player: int = self.agent_name_mapping[agent]
+        return get_legal_move_mask(self.game, player)
+    
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
-        """ (4 * n + 1)^2 spaces in the (axial) board, 6 directions to move for each, 2 types (no-jump/jump)
+        """ (4 * n + 1)^2 spaces in the (axial) board, 6 directions to move for each, 2 types (no-jump/jump) + 1 no-op
         
         Action is a tuple of (q, r, direction, is_jump), where
         
@@ -140,11 +159,6 @@ class raw_env(AECEnv):
         is_jump: 0 or 1, whether to jump over a peg
         
         """
-        # return Tuple([Discrete(4 * self.n + 1, start=-2 * self.n),
-        #               Discrete(4 * self.n + 1, start=-2 * self.n),
-        #               Discrete(6),
-        #               Discrete(2)])
-
         return Discrete(self.action_space_dim)
         
 
