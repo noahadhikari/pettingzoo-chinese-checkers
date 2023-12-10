@@ -16,15 +16,15 @@ from chinese_checkers.env.chinese_checkers_utils import action_to_move, get_lega
 
 def env(**kwargs):
     env = raw_env(**kwargs)
-    env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
+    # env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
     env = wrappers.AssertOutOfBoundsWrapper(env)
     env = wrappers.OrderEnforcingWrapper(env)
     return env
         
 class raw_env(AECEnv):
-    metadata = {"render_modes": ["rgb_array"], "name": "chinese_checkers"}
+    metadata = {"render_modes": ["rgb_array", "human"], "name": "chinese_checkers"}
 
-    def __init__(self, triangle_size: int, render_mode: str | None = None, max_iters: int = 200):
+    def __init__(self, render_mode: str = "rgb_array", triangle_size: int = 4, max_iters: int = 200):
         self.max_iters = max_iters
 
         # Players 0 through 5 are the six players
@@ -35,10 +35,11 @@ class raw_env(AECEnv):
         )
 
         self.window_size = 512  # The size of the PyGame window
+        self.render_mode = render_mode
 
         self.n = triangle_size
         self.rotation = 0
-        self.game = ChineseCheckers(triangle_size)
+        self.game = ChineseCheckers(triangle_size, render_mode=render_mode)
         self.action_space_dim = (4 * self.n + 1) * (4 * self.n + 1) * 6 * 2 + 1
 
     def reset(self, seed=None, options=None):
@@ -93,7 +94,12 @@ class raw_env(AECEnv):
             self.agent_selection = self._agent_selector.next()
 
     def render(self):
-        return self.game.render()
+        if self.render_mode is None:
+            gymnasium.logger.warn(
+                "You are calling render method without specifying any render mode."
+            )
+        else:
+            return self.game.render()
 
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent):

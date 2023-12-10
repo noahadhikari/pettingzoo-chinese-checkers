@@ -6,10 +6,10 @@ import matplotlib.pyplot as plt
 def train(board_size=1):
     print("in train")
 
-    env = chinese_checkers_env.make_env(board_size)
+    env = chinese_checkers_env.env(triangle_size=board_size, render_mode="human")
     env.reset()
     
-    max_iter = 100
+    max_iter = 10000
     iter = 0
     for agent in env.agent_iter():
         if iter >= max_iter:
@@ -32,14 +32,12 @@ def train(board_size=1):
         if action:
             print(agent, action_to_move(action, board_size))
             env.step(action)
+        else:
+            env.reset()
         iter += 1
 
         # render frame and wait til keypress to continue
-        frame = env.render()
-        plt.imshow(frame)
-        plt.pause(0.05)
-        plt.savefig("save.png")
-        plt.draw()
+        env.render()
     
     env.close()
 

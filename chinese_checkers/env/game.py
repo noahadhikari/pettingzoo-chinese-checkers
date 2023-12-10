@@ -107,7 +107,7 @@ class ChineseCheckers:
     OUT_OF_BOUNDS = -2
     EMPTY_SPACE = -1
 
-    def __init__(self, triangle_size: int):
+    def __init__(self, triangle_size: int, render_mode: str = "rgb_array"):
         r"""
         At the beginning of the game:
             Player 0 is at the top of the board,
@@ -160,9 +160,10 @@ class ChineseCheckers:
             The other initial positions are similar but rotated clockwise about the origin by 60 degrees for each player.
 
         """
+        self.render_mode = render_mode
         self.n = triangle_size
         self.rotation = 0
-        self.legal_moves = None
+        self.clock = None
 
         self.init_game()
 
@@ -204,8 +205,8 @@ class ChineseCheckers:
             0-5: player number of occupying peg
         """
         self._jumps = []
-        self._legal_moves = set()
-        self.game_over = False
+        self._legal_moves = None
+        self._game_over = False
 
         def _fill_center_empty():
             self._set_rotation(0)
@@ -246,16 +247,16 @@ class ChineseCheckers:
                         if self._is_single_move_legal(move):
                             moves.append(move)
         
-        if len(moves) == 0 or self._is_single_move_legal(Move.END_TURN):
+        if (len(moves) == 0 and not self._game_over) or self._is_single_move_legal(Move.END_TURN):
             moves.append(Move.END_TURN)
             
-        self.legal_moves = moves
+        self._legal_moves = moves
         self._unset_rotation()
     
     def get_legal_moves(self, player: int):
-        if self.legal_moves is None:
+        if self._legal_moves is None:
             self.find_legal_moves(player)
-        return self.legal_moves
+        return self._legal_moves
 
     def _get_home_coordinates(self):
         """
@@ -324,54 +325,6 @@ class ChineseCheckers:
         rotated_q, rotated_r, rotated_s = self._rotate_60(q, r, s, self.rotation)
         board_q, board_r, board_s = rotated_q + 2 * self.n, rotated_r + 2 * self.n, rotated_s + 2 * self.n
         self.board[board_q, board_r, board_s] = value
-
-    def render(self, player: int = 0):
-        self._set_rotation(player)
-        if self.render_mode == "rgb_array":
-            frame = self._render_frame()
-        self._unset_rotation()
-        return frame
-
-    def _render_frame(self):
-        """
-        Renders a frame of the game. https://www.gymlibrary.dev/content/environment_creation/#rendering
-        """
-        if self.window is None and self.render_mode == "human":
-            pygame.init()
-            pygame.display.init()
-            self.window = pygame.display.set_mode((self.window_size, self.window_size))
-        if self.clock is None and self.render_mode == "human":
-            self.clock = pygame.time.Clock()
-
-        canvas = pygame.Surface((self.window_size, self.window_size))
-        canvas.fill((241, 212, 133)) # Fill background
-
-        def axial_to_pixel(q: int, r: int):
-            l = 20
-            screen_center_x, screen_center_y = self.window_size / 2, self.window_size / 2
-            return screen_center_x + l * np.sqrt(3) * (q + 0.5 * r), \
-                screen_center_y + l * 1.5 * r
-
-        axial_board = self._get_axial_board()
-        for q in range(-2 * self.n, 2 * self.n + 1):
-            for r in range(-2 * self.n, 2 * self.n + 1):
-                pixel_x, pixel_y = axial_to_pixel(q, r)
-                cell = axial_board[q, r]
-                if cell == ChineseCheckers.OUT_OF_BOUNDS:
-                    # Not a valid cell
-                    continue
-                else:
-                    # Cell with a peg
-                    pygame.draw.circle(
-                        canvas,
-                        self.colors[cell],
-                        (pixel_x, pixel_y),
-                        8,
-                    )
-
-        return np.transpose(
-            np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
-        )
     
     @staticmethod
     def _cube_to_axial(q: int, r: int, s: int):
@@ -416,6 +369,9 @@ class ChineseCheckers:
         Checks if a move is legal. Does not consider the edge case in which no moves are valid.
         """
         assert self.rotation is not None
+
+        if self._game_over:
+            return False
 
         player = self.rotation
 
@@ -483,11 +439,10 @@ class ChineseCheckers:
 
     # Checks whether a move is legal for the current player
     def is_move_legal(self, move: Move, player: int) -> bool:
-        if self.legal_moves is None:
+        if self._legal_moves is None:
             self.find_legal_moves(player)
-
         self._set_rotation(player)
-        is_legal = move in self.legal_moves
+        is_legal = move in self._legal_moves
         self._unset_rotation()
         return is_legal
     
@@ -495,10 +450,9 @@ class ChineseCheckers:
     # Returns the number of the player's pegs within the target triangle.
     def move(self, player: int, move: Move) -> int:
         assert self.is_move_legal(move, player)
-
         if move == Move.END_TURN:
             self._jumps.clear()
-            self.legal_moves = None
+            self._legal_moves = None
             return 0
         
         self._set_rotation(player)
@@ -513,7 +467,9 @@ class ChineseCheckers:
             self._jumps.append(move)
         else:
             self._jumps.clear()
-        self.legal_moves = None
+        self._legal_moves = None
+        if self._did_player_win():
+            self._game_over = True
         self._unset_rotation()
         return score
 
@@ -527,14 +483,71 @@ class ChineseCheckers:
         if len(self._jumps) > 0:
             return Move.to_relative_move(self._jumps[-1], player)
 
+    def _did_player_win(self) -> bool:
+        return all([value == self.rotation for value in self._target_values()])
+
     def did_player_win(self, player: int) -> bool:
         self._set_rotation(player)
-        did_win = all([value == player for value in self._target_values()])
-        if did_win:
-            self.game_over = True
+        did_win = self._did_player_win()
         self._unset_rotation()
         return did_win
     
     def is_game_over(self) -> bool:
-        return self.game_over
+        return self._game_over
     
+    def render(self, player: int = 0):
+        self._set_rotation(player)
+        frame = None
+        frame = self._render_frame()
+        self._unset_rotation()
+        return frame
+
+    def _render_frame(self):
+        """
+        Renders a frame of the game. https://www.gymlibrary.dev/content/environment_creation/#rendering
+        """
+        if self.window is None and self.render_mode == "human":
+            pygame.init()
+            pygame.display.init()
+            self.window = pygame.display.set_mode((self.window_size, self.window_size))
+        if self.clock is None and self.render_mode == "human":
+            self.clock = pygame.time.Clock()
+
+        canvas = pygame.Surface((self.window_size, self.window_size))
+        canvas.fill((241, 212, 133)) # Fill background
+
+        def axial_to_pixel(q: int, r: int):
+            l = 20
+            screen_center_x, screen_center_y = self.window_size / 2, self.window_size / 2
+            return screen_center_x + l * np.sqrt(3) * (q + 0.5 * r), \
+                screen_center_y + l * 1.5 * r
+
+        axial_board = self._get_axial_board()
+        for q in range(-2 * self.n, 2 * self.n + 1):
+            for r in range(-2 * self.n, 2 * self.n + 1):
+                pixel_x, pixel_y = axial_to_pixel(q, r)
+                cell = axial_board[q, r]
+                if cell == ChineseCheckers.OUT_OF_BOUNDS:
+                    # Not a valid cell
+                    continue
+                else:
+                    # Cell with a peg
+                    pygame.draw.circle(
+                        canvas,
+                        self.colors[cell],
+                        (pixel_x, pixel_y),
+                        8,
+                    )
+        if self.render_mode == "human":
+            # The following line copies our drawings from `canvas` to the visible window
+            self.window.blit(canvas, canvas.get_rect())
+            pygame.event.pump()
+            pygame.display.update()
+
+            # We need to ensure that human-rendering occurs at the predefined framerate.
+            # The following line will automatically add a delay to keep the framerate stable.
+            self.clock.tick(5)
+        else:  # rgb_array
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
+            )

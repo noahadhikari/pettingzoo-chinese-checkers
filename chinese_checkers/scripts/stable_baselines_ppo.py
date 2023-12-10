@@ -92,7 +92,7 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
     env = env_fn.env(render_mode=render_mode, **env_kwargs)
 
     print(
-        f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[1]}."
+        f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[0]}."
     )
 
     try:
@@ -120,31 +120,18 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
             observation, action_mask = obs.values()
 
             if termination or truncation:
-                # If there is a winner, keep track, otherwise don't change the scores (tie)
-                if (
-                    env.rewards[env.possible_agents[0]]
-                    != env.rewards[env.possible_agents[1]]
-                ):
-                    winner = max(env.rewards, key=env.rewards.get)
-                    scores[winner] += env.rewards[
-                        winner
-                    ]  # only tracks the largest reward (winner of game)
-                # Also track negative and positive rewards (penalizes illegal moves)
-                for a in env.possible_agents:
-                    total_rewards[a] += env.rewards[a]
-                # List of rewards by round, for reference
-                round_rewards.append(env.rewards)
                 break
             else:
                 if agent == env.possible_agents[0]:
-                    act = env.action_space(agent).sample(action_mask)
-                else:
                     # Note: PettingZoo expects integer actions # TODO: change chess to cast actions to type int?
                     act = int(
                         model.predict(
                             observation, action_masks=action_mask, deterministic=True
                         )[0]
                     )
+                else:
+                    act = env.action_space(agent).sample(action_mask)
+            env.render()
             env.step(act)
     env.close()
 
@@ -162,9 +149,10 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
 
 if __name__ == "__main__":
     env_fn = chinese_checkers_v0
-    # env_fn = connect_four_v3
 
-    env_kwargs = {}
+    env_kwargs = {
+        "triangle_size": 2,
+    }
 
     # Evaluation/training hyperparameter notes:
     # 10k steps: Winrate:  0.76, loss order of 1e-03
@@ -174,8 +162,8 @@ if __name__ == "__main__":
     # Train a model against itself (takes ~20 seconds on a laptop CPU)
     train_action_mask(env_fn, steps=20_480, seed=0, **env_kwargs)
 
-    # Evaluate 100 games against a random agent (winrate should be ~80%)
-    eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs)
+    # # Evaluate 100 games against a random agent (winrate should be ~80%)
+    # eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs)
 
     # Watch two games vs a random agent
     eval_action_mask(env_fn, num_games=2, render_mode="human", **env_kwargs)
