@@ -5,7 +5,7 @@ import gymnasium
 import numpy as np
 from matplotlib import pyplot as plt
 
-from gymnasium.spaces import Box, Discrete, MultiDiscrete, Tuple, MultiBinary
+from gymnasium.spaces import Box, Discrete, Dict
 
 from pettingzoo import AECEnv
 from pettingzoo.utils import agent_selector, wrappers
@@ -28,21 +28,39 @@ class raw_env(AECEnv):
         self.max_iters = max_iters
 
         # Players 0 through 5 are the six players
-        self.possible_agents = [f"player_{r}" for r in range(6)]
-
+        self.agents = [f"player_{r}" for r in range(6)]
+        self.possible_agents = self.agents[:]   
+        self._agent_selector = agent_selector(self.agents)
         self.agent_name_mapping = dict(
             zip(self.possible_agents, list(range(len(self.possible_agents))))
         )
+        
+        self.n = triangle_size
+
+        self.rewards = None
+        self.infos = {agent: {} for agent in self.agents}
+        self.truncations = {agent: False for agent in self.agents}
+        self.terminations = {agent: False for agent in self.agents}
+
+        self.action_space_dim = (4 * self.n + 1) * (4 * self.n + 1) * 6 * 2 + 1
+        self.action_spaces = {agent: Discrete(self.action_space_dim) for agent in self.agents}
+        self.observation_spaces = {
+            agent: Dict({
+                "observation": Box(low=0, high=1, shape=(4 * self.n + 1, 4 * self.n + 1, 8)),
+                "action_mask": Box(low=0, high=1, shape=(self.action_space_dim,), dtype=np.int8)
+            })
+            for agent in self.agents
+        }
+
+        self.agent_selection = None
 
         self.window_size = 512  # The size of the PyGame window
         self.render_mode = render_mode
 
-        self.n = triangle_size
         self.rotation = 0
         self.game = ChineseCheckers(triangle_size, render_mode=render_mode)
-        self.action_space_dim = (4 * self.n + 1) * (4 * self.n + 1) * 6 * 2 + 1
 
-    def reset(self, seed=None, options=None):
+    def reset(self, seed=None, return_info=None, options=None):
         self.agents = self.possible_agents[:]
         self.rewards = {agent: 0 for agent in self.agents}
         self._cumulative_rewards = {agent: 0 for agent in self.agents}
@@ -101,20 +119,10 @@ class raw_env(AECEnv):
         else:
             return self.game.render()
 
-    @functools.lru_cache(maxsize=None)
     def observation_space(self, agent):
-        """ The observation is the board from the current player's perspective.
-            To counteract the sparsity of cube coordinates, we convert it to axial
-                (q, r, s) -> (q, r)
-            first.
-            -2: invalid space
-            -1: empty space
-            0-5: player number of occupying peg
+        """ See `observe` method for details on the observation space.
         """
-        return {
-            "observation": Box(low=-2, high=5, shape=(4 * self.n + 1, 4 * self.n + 1, 8)),
-            "action_mask": Box(low=0, high=1, shape=(self.action_space_dim,), dtype=np.int8)
-        }
+        return self.observation_spaces[agent]
         
     def observe(self, agent):
         """ 
@@ -149,12 +157,11 @@ class raw_env(AECEnv):
             "action_mask": get_legal_move_mask(self.game, player)
         }
     
-    def action_mask(self):
-        agent: str = self.agent_selection
-        player: int = self.agent_name_mapping[agent]
-        return get_legal_move_mask(self.game, player)
+    # def action_mask(self):
+    #     agent: str = self.agent_selection
+    #     player: int = self.agent_name_mapping[agent]
+    #     return get_legal_move_mask(self.game, player)
     
-    @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
         """ (4 * n + 1)^2 spaces in the (axial) board, 6 directions to move for each, 2 types (no-jump/jump) + 1 no-op
         
@@ -165,7 +172,10 @@ class raw_env(AECEnv):
         is_jump: 0 or 1, whether to jump over a peg
         
         """
-        return Discrete(self.action_space_dim)
+        return self.action_spaces[agent]
+    
+    def close(self):
+        pass
         
 
 if __name__ == "__main__":

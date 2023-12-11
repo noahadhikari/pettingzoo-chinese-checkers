@@ -449,7 +449,9 @@ class ChineseCheckers:
     # Executes the move for the specified player. Errors if move is illegal.
     # Returns the number of the player's pegs within the target triangle.
     def move(self, player: int, move: Move) -> int:
-        assert self.is_move_legal(move, player)
+        if (not self.is_move_legal(move, player)):
+            return -10000
+        # assert self.is_move_legal(move, player), f"Move {move} is not legal for player {player}"
         if move == Move.END_TURN:
             self._jumps.clear()
             self._legal_moves = None
