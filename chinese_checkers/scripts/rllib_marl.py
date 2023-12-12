@@ -1,12 +1,16 @@
+import datetime
 import os
 import numpy as np
-from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
+import glob
+import argparse
+
 from gymnasium.spaces import Box, Discrete
+
+from pettingzoo.classic import rps_v2
+
 import ray
 from ray import tune
 from ray.tune.registry import register_env
-from pettingzoo.classic import rps_v2
-from chinese_checkers import chinese_checkers_v0
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.rllib.algorithms.ppo import (
     PPO,
@@ -15,98 +19,125 @@ from ray.rllib.algorithms.ppo import (
 from ray.rllib.models import ModelCatalog
 from ray.rllib.core.rl_module.rl_module import SingleAgentRLModuleSpec
 from ray.tune.logger import pretty_print
+from ray.rllib.policy.policy import Policy
 
+from chinese_checkers import chinese_checkers_v0
+from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
 from chinese_checkers.models.action_masking import ActionMaskModel
 from chinese_checkers.scripts.logger import custom_log_creator
 
-ModelCatalog.register_custom_model(
-    "pa_model", ActionMaskModel
-)
+def eval(triangle_size: int = 4, policy_name: str = "default_policy", num_games: int = 2, against_self: bool = False, checkpoint_path: str = None):
+    # Evaluate a trained agent vs a random agent
 
-# define how to make the environment. This way takes an optional environment config, num_floors
-env_creator = lambda config: chinese_checkers_v0.env(
-    triangle_size=config["triangle_size"]
-)
+    # Use the `from_checkpoint` utility of the Policy class:
+    policy = Policy.from_checkpoint(checkpoint_path)
+    policy = policy[policy_name]
 
-# register that way to make the environment under an rllib name
-env_name = 'chinese_checkers_v0'
-register_env(env_name, lambda config: PettingZooEnv(env_creator(config)))
+    # Use the restored policy for serving actions.
+    if against_self:
+        evaluate_policies(policy, policy, triangle_size=triangle_size, num_games=num_games)
+    else:
+        evaluate_policy_against_random(policy, triangle_size=triangle_size, num_games=num_games)
+    
 
-triangle_size = 2
-test_env = PettingZooEnv(env_creator({"triangle_size": triangle_size}))
-# test_env = MultiAgentEnvCompatibility(test_env)
-obs_space = test_env.observation_space
-act_space = test_env.action_space
-
-ray.init(num_cpus=1 or None, local_mode=True)
-
-rlm_class = TorchActionMaskRLM
-
-model_config = {
-    # input size is 9x9x8
-    "conv_filters": [[16, [3, 3], 1], [32, [3, 3], 1], [64, [3, 3], 1]],
-}
-
-rlm_spec = SingleAgentRLModuleSpec(module_class=rlm_class, model_config_dict=model_config)
-
-action_space_dim = (4 * triangle_size + 1) * (4 * triangle_size + 1) * 6 * 2 + 1
-observation_space_dim = (4 * triangle_size + 1, 4 * triangle_size + 1, 8)
-
-# main part: configure the ActionMaskEnv and ActionMaskModel
-config = (
-    PPOConfig()
-    .environment(
-        # random env with 100 discrete actions and 5x [-1,1] observations
-        # some actions are declared invalid and lead to errors
-        env=env_name, 
-        clip_actions=True,
-        env_config={
-            "triangle_size": triangle_size,
-            "action_space": Discrete(action_space_dim),
-            # This is not going to be the observation space that our RLModule sees.
-            # It's only the configuration provided to the environment.
-            # The environment will instead create Dict observations with
-            # the keys "observation" and "action_mask".
-            "observation_space": Box(low=0, high=1, shape=observation_space_dim, dtype=np.int8),
-        },
+def evaluate_policies(eval_policy, baseline_policy, triangle_size=4, num_games=2):
+    """
+    Evaluate two policies against one another. eval_policy will play as player 0, baseline_policy will play as player 1-5.
+    """
+    env = chinese_checkers_v0.env(render_mode="human", triangle_size=triangle_size)
+    print(
+        f"Starting evaluation of {eval_policy} against baseline {baseline_policy}. Trained agent will play as {env.possible_agents[0]}."
     )
-    # We need to disable preprocessing of observations, because preprocessing
-    # would flatten the observation dict of the environment.
-    .experimental(
-        # _enable_new_api_stack=True,
-        _disable_preprocessor_api=True,
+
+    total_rewards = {agent: 0 for agent in env.possible_agents}
+    wins = {agent: 0 for agent in env.possible_agents}
+
+    for i in range(num_games):
+        env.reset(seed=i)
+        for a in range(6):
+            env.action_space(env.possible_agents[a]).seed(i)
+
+        for agent in env.agent_iter():
+            obs, reward, termination, truncation, info = env.last()
+            total_rewards[agent] += reward
+            if termination or truncation:
+                break
+            else:
+                if agent == env.possible_agents[0]:
+                    action = eval_policy.compute_single_action(obs)
+                else:
+                    action = baseline_policy.compute_single_action(obs)
+            act = int(action[0])
+            env.render()
+            env.step(act)
+
+        # accumulate rewards after game ends
+        for agent in env.possible_agents:
+            rew = env._cumulative_rewards[agent]
+            total_rewards[agent] += rew
+            if rew == 10:
+                wins[agent] += 1
+                
+    env.close()
+
+    winrate = wins[env.possible_agents[0]] / num_games
+    print("Total rewards (incl. negative rewards): ", total_rewards)
+    print("Average rewards (incl. negative rewards): ", {agent: total_rewards[agent] / num_games for agent in env.possible_agents})
+    print("Winrate: ", winrate)
+
+
+class ChineseCheckersRandomPolicy(Policy):
+    def __init__(self, triangle_size=4, config={}):
+        observation_space = Box(low=0, high=1, shape=((4 * triangle_size + 1) * (4 * triangle_size + 1) * 8,), dtype=np.int8)
+        action_space = Discrete((4 * triangle_size + 1) * (4 * triangle_size + 1) * 6 * 2 + 1)
+        super().__init__(observation_space, action_space, config)
+        self.action_space = action_space
+
+    def compute_actions(self, obs_batch, state_batches=None, prev_action_batch=None, prev_reward_batch=None, info_batch=None, episodes=None, **kwargs):
+        actions = []
+        for obs in obs_batch:
+            action = self.action_space.sample(obs["action_mask"])
+            actions.append(action)
+        return actions, [], {}
+
+    def compute_single_action(self, obs, state=None, prev_action=None, prev_reward=None, info=None, episode=None, **kwargs):
+        return self.compute_actions([obs], state_batches=[state], prev_action_batch=[prev_action], prev_reward_batch=[prev_reward], info_batch=[info], episodes=[episode], **kwargs)[0]
+
+
+def evaluate_policy_against_random(policy, triangle_size=4, num_games=2):
+    return evaluate_policies(policy, ChineseCheckersRandomPolicy(triangle_size), triangle_size, num_games)
+
+def main(args):
+    # define how to make the environment. This way takes an optional environment config, num_floors
+    env_creator = lambda config: chinese_checkers_v0.env(
+        triangle_size=config["triangle_size"]
     )
-    .framework("torch")
-    .resources(
-        # Use GPUs iff `RLLIB_NUM_GPUS` env var set to > 0.
-        num_gpus=int(os.environ.get("RLLIB_NUM_GPUS", "0"))
+
+    # register that way to make the environment under an rllib name
+    env_name = 'chinese_checkers_v0'
+    register_env(env_name, lambda config: PettingZooEnv(env_creator(config)))
+
+    ray.init(num_cpus=1 or None, local_mode=True)
+    if args.eval_random:
+        eval(triangle_size=args.triangle_size, policy_name=args.policy_name, against_self=False, checkpoint_path=args.checkpoint_path)
+    elif args.eval_self:
+        eval(triangle_size=args.triangle_size, policy_name=args.policy_name, against_self=True, checkpoint_path=args.checkpoint_path)
+    else:
+        print("Did not specify train or eval.")
+        return
+    print("Finished successfully without selecting invalid actions.")
+    ray.shutdown()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog='RLLib train/eval script'
     )
-    .rl_module(rl_module_spec=rlm_spec)
-)
-
-algo = config.build(logger_creator=custom_log_creator(os.path.join(os.curdir, "logs"), ''))
-
-# run manual training loop and print results after each iteration
-for _ in range(100):
-    result = algo.train()
-    print(pretty_print(result))
-
-# # manual test loop
-# print("Finished training. Running manual test/inference loop.")
-# # prepare environment with max 10 steps
-# config["env_config"]["max_episode_len"] = 10
-# env = ActionMaskEnv(config["env_config"])
-# obs, info = env.reset()
-# done = False
-# # run one iteration until done
-# print(f"ActionMaskEnv with {config['env_config']}")
-# while not done:
-#     action = algo.compute_single_action(obs)
-#     next_obs, reward, done, truncated, _ = env.step(action)
-#     # observations contain original observations and the action mask
-#     # reward is random and irrelevant here and therefore not printed
-#     print(f"Obs: {obs}, Action: {action}")
-#     obs = next_obs
-
-print("Finished successfully without selecting invalid actions.")
-ray.shutdown()
+    parser.add_argument('-er', '--eval_random',
+                        action='store_true')  # on/off flag
+    parser.add_argument('-es', '--eval_self',
+                        action='store_true')  # on/off flag
+    parser.add_argument('-p', '--policy_name', default="default_policy")
+    parser.add_argument('-s', '--triangle_size', type=int, required=True)
+    parser.add_argument('-c', '--checkpoint_path', type=str, required=False)
+    args = parser.parse_args()
+    main(args)

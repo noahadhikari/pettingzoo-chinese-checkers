@@ -9,7 +9,6 @@ def custom_log_creator(custom_path, custom_str):
     logdir_prefix = "{}_{}".format(custom_str, timestr)
 
     def logger_creator(config):
-
         if not os.path.exists(custom_path):
             os.makedirs(custom_path)
         logdir = tempfile.mkdtemp(prefix=logdir_prefix, dir=custom_path)

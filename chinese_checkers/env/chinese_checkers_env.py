@@ -11,7 +11,7 @@ from pettingzoo import AECEnv
 from pettingzoo.utils import agent_selector, wrappers
 
 import pygame
-from chinese_checkers.env.game import ChineseCheckers, Move, Position
+from chinese_checkers.env.game import ChineseCheckers, Direction, Move, Position
 from chinese_checkers.env.chinese_checkers_utils import action_to_move, get_legal_move_mask, rotate_observation
 
 def env(**kwargs):
@@ -24,7 +24,7 @@ def env(**kwargs):
 class raw_env(AECEnv):
     metadata = {"render_modes": ["rgb_array", "human"], "name": "chinese_checkers"}
 
-    def __init__(self, render_mode: str = "rgb_array", triangle_size: int = 4, max_iters: int = 200):
+    def __init__(self, render_mode: str = "rgb_array", triangle_size: int = 4, max_iters: int = 1000, **kwargs):
         self.max_iters = max_iters
 
         # Players 0 through 5 are the six players
@@ -43,10 +43,12 @@ class raw_env(AECEnv):
         self.terminations = {agent: False for agent in self.agents}
 
         self.action_space_dim = (4 * self.n + 1) * (4 * self.n + 1) * 6 * 2 + 1
+        self.observation_space_dim = (4 * self.n + 1) * (4 * self.n + 1) * 8
         self.action_spaces = {agent: Discrete(self.action_space_dim) for agent in self.agents}
         self.observation_spaces = {
             agent: Dict({
-                "observation": Box(low=0, high=1, shape=(4 * self.n + 1, 4 * self.n + 1, 8)),
+                # "observation": Box(low=0, high=1, shape=(4 * self.n + 1, 4 * self.n + 1, 8)),
+                "observation": Box(low=0, high=1, shape=(self.observation_space_dim,)),
                 "action_mask": Box(low=0, high=1, shape=(self.action_space_dim,), dtype=np.int8)
             })
             for agent in self.agents
@@ -85,19 +87,33 @@ class raw_env(AECEnv):
         action = int(action)
 
         move = action_to_move(action, self.n)
-        score = self.game.move(player, move)
+        move = self.game.move(player, move)
 
         # If the current player wins, set their reward to 5N and other agents to -N
         # Otherwise, set the reward to the number of pegs that the player has in the target zone
-        self._cumulative_rewards[agent] = 0
+        # self._cumulative_rewards[agent] = 0
         if self.game.did_player_win(self.agent_name_mapping[agent]):
             self.terminations = {
                 agent: self.game.is_game_over() for agent in self.agents
             }
             for a in self.agents:
-                self.rewards[a] = self.n * 5 if a == agent else -self.n
-        else:
-            self.rewards[agent] = score
+                self.rewards[a] = 10 if a == agent else -1
+        elif move is None:
+                self.rewards[agent] = -1000
+        else:            
+            if isinstance(move, Move) and move.direction in [Direction.DownLeft, Direction.DownRight]:
+                self.rewards[agent] = 0.001
+            if isinstance(move, Move) and move.direction in [Direction.UpLeft, Direction.UpRight]:
+                self.rewards[agent] = -0.001
+            if move and move != Move.END_TURN:
+                src_pos = move.position
+                dst_pos = move.moved_position()
+                target = [Position(q, r) for q, r, s in self.game.get_target_coordinates(player)]
+                if src_pos not in target and dst_pos in target:
+                    self.rewards[agent] += 0.1
+                if src_pos in target and dst_pos not in target:
+                    self.rewards[agent] -= 0.1
+
         self._accumulate_rewards()
         self._clear_rewards()
 
@@ -108,7 +124,7 @@ class raw_env(AECEnv):
             }
         
         # if jump then don't advance the current player
-        if move == Move.END_TURN or not move.is_jump:
+        if move == Move.END_TURN or not (move and move.is_jump):
             self.agent_selection = self._agent_selector.next()
 
     def render(self):
@@ -151,6 +167,8 @@ class raw_env(AECEnv):
             [jump_sources_channel, last_jump_destination_channel],
             axis=-1
         )
+
+        observation = observation.flatten()
 
         return {
             "observation": observation,

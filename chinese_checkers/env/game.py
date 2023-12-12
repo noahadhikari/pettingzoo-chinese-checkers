@@ -12,6 +12,8 @@ from pettingzoo.utils import agent_selector, wrappers
 
 import pygame
 
+from typing import Tuple
+
 class Direction(IntEnum):
     Right = 0
     UpRight = 1
@@ -280,7 +282,7 @@ class ChineseCheckers:
 
     def _get_target_coordinates(self):
         """
-        Returns (q, r, s) tuples for the absolute coordinates of the player's target triangle.
+        Returns (q, r, s) tuples for the absolute coordinates of the current player's target triangle.
         Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
         """
         assert self.rotation is not None
@@ -289,6 +291,15 @@ class ChineseCheckers:
             for j in range(0, self.n - i):
                 q, r, s = j, i, -i - j
                 yield offset + np.array([q, r, s])
+
+    def get_target_coordinates(self, player):
+        """
+        Returns (q, r, s) tuples for the absolute coordinates of the player's target triangle.
+        Has relative coordinate (0, 0, 0) as the leftmost point of the triangle for player 0.
+        """
+        self._set_rotation(player)
+        yield from self._get_target_coordinates()
+        self._unset_rotation()
 
     def _target_values(self):
         """
@@ -450,20 +461,20 @@ class ChineseCheckers:
     # Returns the number of the player's pegs within the target triangle.
     def move(self, player: int, move: Move) -> int:
         if (not self.is_move_legal(move, player)):
-            return -10000
-        # assert self.is_move_legal(move, player), f"Move {move} is not legal for player {player}"
+            print(f"{move} is not legal for player {player}")
+            return None
+        # assert self.is_move_legal(move, player), f"{move} is not legal for player {player}"
         if move == Move.END_TURN:
             self._jumps.clear()
             self._legal_moves = None
-            return 0
+            return move
         
         self._set_rotation(player)
-        score = 0
+        # score = 0
         src_pos = move.position
         self._set_coordinate(src_pos.q, src_pos.r, src_pos.s, ChineseCheckers.EMPTY_SPACE)
         dst_pos = move.moved_position()
-        for value in self._target_values():
-            score += 1 if value == player else 0
+
         self._set_coordinate(dst_pos.q, dst_pos.r, dst_pos.s, player)
         if move.is_jump:
             self._jumps.append(move)
@@ -473,7 +484,7 @@ class ChineseCheckers:
         if self._did_player_win():
             self._game_over = True
         self._unset_rotation()
-        return score
+        return move
 
     def get_jumps(self, player: int):
         return [Move.to_relative_move(jump, player) for jump in self._jumps]
@@ -548,7 +559,7 @@ class ChineseCheckers:
 
             # We need to ensure that human-rendering occurs at the predefined framerate.
             # The following line will automatically add a delay to keep the framerate stable.
-            self.clock.tick(5)
+            self.clock.tick(30)
         else:  # rgb_array
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)

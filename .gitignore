@@ -361,3 +361,9 @@ dmypy.json
 # Exam stuff
 exams/*.pdf
 exams/*.bin
+
+logs/*
+logs*/
+*.zip
+*.png
+checkpoints/*
