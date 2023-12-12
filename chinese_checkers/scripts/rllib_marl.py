@@ -41,11 +41,13 @@ act_space = test_env.action_space
 ray.init(num_cpus=1 or None, local_mode=True)
 
 rlm_class = TorchActionMaskRLM
-rlm_spec = SingleAgentRLModuleSpec(
-    module_class=rlm_class,
-    # observation_space=test_env.observation_space,
-    # action_space=test_env.action_space,
-)
+
+model_config = {
+    # input size is 9x9x8
+    "conv_filters": [[16, [3, 3], 1], [32, [3, 3], 1], [64, [3, 3], 1]],
+}
+
+rlm_spec = SingleAgentRLModuleSpec(module_class=rlm_class, model_config_dict=model_config)
 
 action_space_dim = (4 * triangle_size + 1) * (4 * triangle_size + 1) * 6 * 2 + 1
 observation_space_dim = (4 * triangle_size + 1, 4 * triangle_size + 1, 8)
