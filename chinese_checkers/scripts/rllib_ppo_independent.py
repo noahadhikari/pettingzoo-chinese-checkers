@@ -104,7 +104,7 @@ def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
     for i in range(100):
         result = algo.train()
         timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logdir = "{}_{}".format("checkpoints/chinese_checkers", timestr)
+        logdir = "{}_{}".format("checkpoints/chinese_checkers_independent", timestr)
         save_result = algo.save(checkpoint_dir=logdir)
         path_to_checkpoint = save_result.checkpoint.path
         print(

@@ -58,7 +58,8 @@ class PPORLModuleWithSharedGlobalEncoder(TorchActionMaskRLM, PPOTorchRLModule):
         self, config
     ) -> None:
         super().__init__(config=config)
-        self.encoder = config.model_config_dict["encoder"]
+        self.encoder = config.model_config_dict["shared_encoder"]
+        config.model_config_dict.pop("shared_encoder")
 
 class PPOModuleWithSharedEncoder(MultiAgentRLModule):
     def __init__(self, config: MultiAgentRLModuleConfig) -> None:
@@ -76,13 +77,14 @@ class PPOModuleWithSharedEncoder(MultiAgentRLModule):
         actor_critic_encoder_config = ActorCriticEncoderConfig(
             base_encoder_config=encoder_config
         )
+
         shared_encoder = actor_critic_encoder_config.build(framework="torch")
 
         rl_modules = {}
         for module_id, module_spec in module_specs.items():
             module_spec.update(SingleAgentRLModuleSpec(
                 model_config_dict={
-                    "encoder": shared_encoder,
+                    "shared_encoder": shared_encoder,
                 } | module_spec.model_config_dict
             ))
             rl_modules[module_id] = module_spec.build()

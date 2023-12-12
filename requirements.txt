@@ -20,3 +20,4 @@ stable-baselines3>=2.0.0
 sb3-contrib>=2.0.0
 agilerl>=0.1.18
 ray[rllib]>=2.7.0
+numpy>=1.26.2

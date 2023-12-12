@@ -114,14 +114,14 @@ def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
     # run manual training loop and print results after each iteration
     for i in range(100):
         result = algo.train()
-        # timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # logdir = "{}_{}".format("checkpoints/chinese_checkers", timestr)
-        # save_result = algo.save(checkpoint_dir=logdir)
-        # path_to_checkpoint = save_result.checkpoint.path
-        # print(
-        #     "An Algorithm checkpoint has been created inside directory: "
-        #     f"'{path_to_checkpoint}'."
-        # )
+        timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        logdir = "{}_{}".format("checkpoints/chinese_checkers_shared_critic", timestr)
+        save_result = algo.save(checkpoint_dir=logdir)
+        path_to_checkpoint = save_result.checkpoint.path
+        print(
+            "An Algorithm checkpoint has been created inside directory: "
+            f"'{path_to_checkpoint}'."
+        )
         # print(pretty_print(result))
         print(f"""
               Iteration {i}: episode_reward_mean = {result['episode_reward_mean']},
