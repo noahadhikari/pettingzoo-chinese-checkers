@@ -41,7 +41,11 @@ act_space = test_env.action_space
 ray.init(num_cpus=1 or None, local_mode=True)
 
 rlm_class = TorchActionMaskRLM
-rlm_spec = SingleAgentRLModuleSpec(module_class=rlm_class)
+rlm_spec = SingleAgentRLModuleSpec(
+    module_class=rlm_class,
+    # observation_space=test_env.observation_space,
+    # action_space=test_env.action_space,
+)
 
 action_space_dim = (4 * triangle_size + 1) * (4 * triangle_size + 1) * 6 * 2 + 1
 observation_space_dim = (4 * triangle_size + 1, 4 * triangle_size + 1, 8)
@@ -55,7 +59,7 @@ config = (
         env=env_name, 
         clip_actions=True,
         env_config={
-            "triangle_size": 2,
+            "triangle_size": triangle_size,
             "action_space": Discrete(action_space_dim),
             # This is not going to be the observation space that our RLModule sees.
             # It's only the configuration provided to the environment.
@@ -77,7 +81,6 @@ config = (
     )
     .rl_module(rl_module_spec=rlm_spec)
 )
-
 
 algo = config.build(logger_creator=custom_log_creator(os.path.join(os.curdir, "logs"), ''))
 
