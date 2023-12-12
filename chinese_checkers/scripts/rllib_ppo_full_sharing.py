@@ -33,7 +33,10 @@ def train(env_name: str, triangle_size: int = 4):
         "fcnet_hiddens": [64, 64]
     }
 
-    rlm_spec = SingleAgentRLModuleSpec(module_class=rlm_class, model_config_dict=model_config)
+    rlm_spec = SingleAgentRLModuleSpec(
+        module_class=rlm_class, 
+        model_config_dict=model_config
+    )
 
     action_space_dim = (4 * triangle_size + 1) * (4 * triangle_size + 1) * 6 * 2 + 1
     # observation_space_shape = (4 * triangle_size + 1, 4 * triangle_size + 1, 8)

@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+from chinese_checkers.scripts.rllib_marl import evaluate_policy_against_random
 import numpy as np
 import glob
 import argparse
@@ -26,19 +27,20 @@ from ray.rllib.policy.policy import Policy
 from chinese_checkers import chinese_checkers_v0
 from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
 from chinese_checkers.models.action_masking import ActionMaskModel
-from chinese_checkers.models.shared_critic_ppo import PPOModuleWithSharedEncoder
+from chinese_checkers.models.shared_critic_ppo import PPOModuleWithSharedEncoder, PPORLModuleWithSharedGlobalEncoder
 from chinese_checkers.scripts.logger import custom_log_creator
 
 def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
-    rlm_class = TorchActionMaskRLM
-
     rlm_spec = MultiAgentRLModuleSpec(
         marl_module_class=PPOModuleWithSharedEncoder,
         module_specs={
-            "player_{i}": SingleAgentRLModuleSpec(
+            f"policy_{i}": SingleAgentRLModuleSpec(
+                module_class = PPORLModuleWithSharedGlobalEncoder,
                 observation_space=obs_space,
                 action_space=act_space,
-                model_config_dict={"fcnet_hiddens": [64, 64]},
+                model_config_dict={
+                    "fcnet_hiddens": [64, 64]
+                },
             ) for i in range(6)
         },
     )
@@ -112,14 +114,14 @@ def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
     # run manual training loop and print results after each iteration
     for i in range(100):
         result = algo.train()
-        timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logdir = "{}_{}".format("checkpoints/chinese_checkers", timestr)
-        save_result = algo.save(checkpoint_dir=logdir)
-        path_to_checkpoint = save_result.checkpoint.path
-        print(
-            "An Algorithm checkpoint has been created inside directory: "
-            f"'{path_to_checkpoint}'."
-        )
+        # timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # logdir = "{}_{}".format("checkpoints/chinese_checkers", timestr)
+        # save_result = algo.save(checkpoint_dir=logdir)
+        # path_to_checkpoint = save_result.checkpoint.path
+        # print(
+        #     "An Algorithm checkpoint has been created inside directory: "
+        #     f"'{path_to_checkpoint}'."
+        # )
         # print(pretty_print(result))
         print(f"""
               Iteration {i}: episode_reward_mean = {result['episode_reward_mean']},
@@ -127,7 +129,9 @@ def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
                              episode_reward_min  = {result['episode_reward_min']},
                              episode_len_mean    = {result['episode_len_mean']}
               """)
-    # evaluate_policy_against_random(algo.get_policy(), triangle_size=triangle_size)
+        policy = algo.get_policy("policy_0")
+        if (i + 1) % 5 == 0 and policy:
+            evaluate_policy_against_random(policy, triangle_size=triangle_size)
     return algo
 
 def main(args):
@@ -139,21 +143,12 @@ def main(args):
     env_name = 'chinese_checkers_v0'
     register_env(env_name, lambda config: PettingZooEnv(env_creator(config)))
 
-    test_env = PettingZooEnv(env_creator({"triangle_size": 2}))
+    test_env = PettingZooEnv(env_creator({"triangle_size": args.triangle_size}))
     # test_env = MultiAgentEnvCompatibility(test_env)
     obs_space = test_env.observation_space["player_0"]
     act_space = test_env.action_space["player_0"]
 
-    ray.init(
-        num_cpus=1 or None, 
-        logging_level="ERROR", 
-        log_to_driver=False,
-        _system_config={
-            "object_spilling_config": json.dumps(
-                {"type": "filesystem", "params": {"directory_path": "/tmp/spill"}},
-            )
-        }
-    )
+    ray.init(num_cpus=4 or None)
     if args.train:
         algo = train(env_name, obs_space, act_space, triangle_size=args.triangle_size)
     elif args.eval:

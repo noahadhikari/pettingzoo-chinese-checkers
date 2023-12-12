@@ -26,7 +26,7 @@ from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
 from chinese_checkers.models.action_masking import ActionMaskModel
 from chinese_checkers.scripts.logger import custom_log_creator
 
-def eval(triangle_size: int = 4, policy_name: str = "default_policy", num_games: int = 2, against_self: bool = False, checkpoint_path: str = None):
+def eval(triangle_size: int = 4, policy_name: str = "default_policy", num_games: int = 2, against_self: bool = False, checkpoint_path: str = None, render_mode="human"):
     # Evaluate a trained agent vs a random agent
 
     # Use the `from_checkpoint` utility of the Policy class:
@@ -35,16 +35,16 @@ def eval(triangle_size: int = 4, policy_name: str = "default_policy", num_games:
 
     # Use the restored policy for serving actions.
     if against_self:
-        evaluate_policies(policy, policy, triangle_size=triangle_size, num_games=num_games)
+        evaluate_policies(policy, policy, triangle_size=triangle_size, num_games=num_games, render_mode=render_mode)
     else:
-        evaluate_policy_against_random(policy, triangle_size=triangle_size, num_games=num_games)
+        evaluate_policy_against_random(policy, triangle_size=triangle_size, num_games=num_games, render_mode=render_mode)
     
 
-def evaluate_policies(eval_policy, baseline_policy, triangle_size=4, num_games=2):
+def evaluate_policies(eval_policy, baseline_policy, triangle_size=4, num_games=2, render_mode="human"):
     """
     Evaluate two policies against one another. eval_policy will play as player 0, baseline_policy will play as player 1-5.
     """
-    env = chinese_checkers_v0.env(render_mode="human", triangle_size=triangle_size)
+    env = chinese_checkers_v0.env(render_mode=render_mode, triangle_size=triangle_size)
     print(
         f"Starting evaluation of {eval_policy} against baseline {baseline_policy}. Trained agent will play as {env.possible_agents[0]}."
     )
@@ -104,8 +104,8 @@ class ChineseCheckersRandomPolicy(Policy):
         return self.compute_actions([obs], state_batches=[state], prev_action_batch=[prev_action], prev_reward_batch=[prev_reward], info_batch=[info], episodes=[episode], **kwargs)[0]
 
 
-def evaluate_policy_against_random(policy, triangle_size=4, num_games=2):
-    return evaluate_policies(policy, ChineseCheckersRandomPolicy(triangle_size), triangle_size, num_games)
+def evaluate_policy_against_random(policy, triangle_size=4, num_games=2, render_mode="human"):
+    return evaluate_policies(policy, ChineseCheckersRandomPolicy(triangle_size), triangle_size, num_games, render_mode=render_mode)
 
 def main(args):
     # define how to make the environment. This way takes an optional environment config, num_floors
