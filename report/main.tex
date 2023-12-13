@@ -40,7 +40,7 @@ Abstract goes here.
 
 \usepackage{array}
 \usepackage{listings}
-\usepackage[linesnumbered,ruled]{algorithm2e}
+\usepackage[noline,linesnumbered,ruled]{algorithm2e}
 \usepackage{amsmath}
 
 \begin{document}
@@ -79,20 +79,22 @@ Though reinforcement learning for Chinese Checkers has been explored before \cit
 
 \subsection{Chinese Checkers Rules}
 
-Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of differing colors on a star-shaped board as seen in Figure \ref{fig:board}. Each player has 10 pieces, or pegs, which are initially placed in the corner of the board closest to them. The goal of the game is to move all of one's pieces to the corner of the board opposite to their starting corner.
+Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of differing colors on a star-shaped board as seen in Figure \ref{fig:board}. Each player has 10 pegs, which are initially placed in the corner of the board closest to them. The goal of the game is to move all of one's pegs to the corner of the board opposite to their starting corner.
 
 \subsubsection{Movement}
-The game is played in turns. On a player's turn, they must move one of their pegs to an adjacent empty hole, or jump over an adjacent peg of any color to an empty hole on the other side. A player may jump over multiple pegs in a single turn. A player can only move their own pegs. Only if a player has no possible moves may they pass their turn entirely.
+The game is played in turns. On a player's turn, they must move one of their pegs to an adjacent empty space, or jump over an adjacent peg of any color to an empty space on the other side. A player may jump over multiple pegs in a single turn in a process known as ``chaining'' \cite{ChainingJumps}. A player can only move their own pegs. Only if a player has no possible moves may they pass their turn entirely.
 
 \subsubsection{Spoiling}
-It is possible for a player to prevent another from winning by continously occupying one of the pegs in their goal corner, in a process known as ``spoiling.'' There are no official rules preventing spoiling, and rules prohibiting it tend to be quite complicated, so we permit it in our implementation.
+It is possible for a player to prevent another from winning by continously occupying one of the pegs in their goal corner, in a process known as ``spoiling.'' \cite{ChineseCheckersSpoiling} There are no official rules preventing spoiling, and rules prohibiting it tend to be quite complicated, so we permit it in our implementation.
 
 \subsubsection{Winning}
 The first player to move all of their pegs to the opposite corner wins the game. Though it is possible to continue playing after this point ranking purposes, we focus on the variant where the game is terminated after the first player wins.
 
-\subsection{Hexagonal Coordinates}
+\subsection{Hexagonal Coordinate Systems}
 
-There are various ways to represent hexagonal coordinates. There is a nice symmetry between cubes and hexagons, where each axis of the cube corresponds to the projection in 2D-space of one of the three axes of the hexagon. One can then describe the position of a hexagon in terms of three coordinates $(q, r, s)$. Since the hexagonal grid lies in a plane, however, the coordinates are subject to the constraint $q + r + s = 0$. This is known as the cube coordinate system.
+The geometry of Chinese Checkers lends itself nicely to a hexagonal grid, but it is nontrivial to represent hexagonal grids, and there are various ways to do so. \cite{HexagonalCoordinates}
+
+One way involves exploiting a symmetry between cubes and hexagons, where each axis of the cube corresponds to the projection in 2D-space of one of the three axes of the hexagon. One can then describe the position of a hexagon in terms of three coordinates $(q, r, s)$. Since the hexagonal grid lies in a plane, however, the coordinates are subject to the constraint $q + r + s = 0$. This is known as the cube coordinate system.
 
 Because of the planar constraint, only two of the three $qrs$-coordinates are necessary. $(q, r)$ is a common choice; this is known as the axial coordinate system.
 
@@ -102,12 +104,19 @@ Figure \ref{fig:hex} shows the relationship between the two coordinate systems.
 
 \subsection{Chinese Checkers Environment}
 
+\subsubsection{Number of Players}
+
+For simplicity, we focus on the 6-player variant of Chinese Checkers as we wanted to investigate several algorithms in multiplayer self-play. However, our methods can be applied to other numbers of players.
+
 \subsubsection{Turn Limits}
 
-Unlike games such as chess, which impose turn limits to prevent infinite horizons, Chinese Checkers has no such rule. We impose a turn limit that ends the game with no winners after a large, configurable amount of turns (we found $\approx 1000$ to be a good choice for $N=4$).
+Unlike games such as chess, which impose turn limits to prevent infinite horizons \cite{ChessTurnLimit}, Chinese Checkers has no such rules. We impose a turn limit that ends the game with no winners after a large, configurable amount of turns (we found $\approx 1000$ to be a good choice for $N=4$).
 
 \subsubsection{Submoves}
-Within a single move, it is possible to infinitely stall the game by jumping in a cycle around one or more pegs. To prevent this, we introduce the concept of submoves, where a submove is a single jump or non-jump move. Players may extend their turn using jumps, but cannot jump back to a cell they previously occupied on that turn. If a player makes a jump submove, they may move again; otherwise, their turn ends. Players can end their turn following a jump using the end-turn submove.
+
+In Chinese Checkers, it may be difficult to enumerate all of an agent's possible moves, as jumps increase the number of possible moves significantly. Additionally, within a single move, it is possible to infinitely stall the game by jumping in a cycle around one or more pegs as shown in Figure \ref{fig:cycle}.
+
+To prevent this, we adopt the concept of submoves from RL checkers environments \cite{RLCheckers}, where a move consists of one or more submoves that may not end the player's turn immediately. In Chinese Checkers, a submove is a single jump, adjacent-cell movement, or end-turn action. Jump submoves may not necessarily end a player's turn, but to prevent infinite turns, players cannot jump back to a cell they previously occupied on that turn. Players can end their turn following a jump using the end-turn submove.
 
 \subsubsection{Board Representation}
 We represent variable board size as $N$, where $N$ represents the side lengths of one of the triangular corners of the board (so $N=4$ is traditional Chinese Checkers). The game board uses cube coordinates, with the center of the board being $(q, r, s) = (0, 0, 0)$.
@@ -181,13 +190,13 @@ For each agent, the observation, in addition to the observation space, also incl
 Various reward schemes were tried:
 
 \begin{enumerate}
-  \item \textit{Sparse:} $+5$ for winning, $-1$ for losing, $0$ otherwise
+  \item \textit{Sparse:} $+5N$ for winning, $-N$ for losing, $0$ otherwise
   \item Sparse reward, plus small \textit{goal bonuses} for entering pegs in the goal ($+0.1$) and penalties for removing them from the goal ($-0.1$)
   \item Sparse reward, plus tiny \textit{movement bonuses} for moving forward ($+0.001$) and a small penalty for moving backward ($-0.001$)
-  \item $+5$ for winning, $0$ otherwise, plus goal and movement bonuses
+  \item \textit{Positive-sum:} $+5N$ for winning, $0$ otherwise, plus goal and movement bonuses
 \end{enumerate}
 
-We found that agents with sparse rewards had difficulty learning, so we ultimately opted for a positive sum, dense reward scheme (4) due to the self-play nature of our problem.
+We found that agents with sparse rewards had difficulty learning, so we ultimately opted for a positive sum, dense reward scheme (4) due to our goals involving self-play.
 
 \subsubsection{Environment Stepping}
 
@@ -198,37 +207,41 @@ The pseudocode for a single environment step within our game is summarized below
 
   \textbf{function} step (a)
   
-  \Input{Action as an integer between 0 and $(4N + 1) \times (4N + 1) \times 6 \times 2$}
-  
-  Convert integer action to a move
+  \Indp
 
-  Rotate the board for the current player and perform the move
+  \Input{a: Integer action in $[0, (4N + 1) \times (4N + 1) \times 6 \times 2 + 1)$}
+  
+  Convert integer action to a submove
+
+  Rotate the board to the current player and perform the submove
 
   Update rewards for agents
 
-  \uIf{the move is not a jump}
+  \If{submove is not a jump}
     {
       Advance to the next player
     }
+
+  \Indm
+
+  \textbf{end}
 
   \caption{Environment stepping in Chinese Checkers}
 \end{algorithm}
   
 \subsection{Multi-Agent Learning}
 
-There are many approaches to configuring the models in a multi-agent setting. In this section, we describe both model architectures and ho
-sorca derahs era serutcetihcra esoht 
+There are many approaches to configuring models in multi-agent settings. In this section, we describe both our model algorithm and the variations we tested on the Chinese Checkers environment.
 
 \subsubsection{Model Architecture}
 
-%TODO: does this citation work?%
 All agents learn through Proximal Policy Optimization (PPO) with a clipped surrogate objective\cite{PPO}. In our architecture, the actor and critic share an MLP encoder but have differing policy and value function heads.
 
-\textbf{Encoder Network:} The encoder network takes in inputs the size of the observation space. Each encoder contains a hidden layer of size 64 and output layer of size 64, with ReLU activation functions.
+\textbf{Encoder Network:} The encoder network takes in a vector the size of the observation space as input. Each encoder contains a hidden layer of size 64 and output layer of size 64, with ReLU activation functions.
 
-\textbf{Policy Head:} The policy head a single fully connected layer of shape $(64, 12(4N + 1)^2)$ that outputs a vector the size of the action space.
+\textbf{Policy Head:} The policy head is a single fully connected layer of shape $(64, 12(4N + 1)^2 + 1)$ that takes the encoder output as input and outputs a vector the size of the action space.
 
-\textbf{Value Function Head:} The policy head a single fully connected layer of shape $(64, 1)$.
+\textbf{Value Function Head:} The value function head is a single fully connected layer of shape $(64, 1)$ that takes the encoder output as input and outputs a scalar corresponding to the value of the state.
 
 \subsubsection{Variations on Multi-Agent Setup}
 
@@ -238,7 +251,95 @@ We compare three different policy configurations for the multiple agents: fully-
   \item \textit{Shared-Encoder:} All agents share the same encoder, but have unique policy and value function heads.
   \item \textit{Fully-Shared:} Agents share all parameters, effectively training a single policy to be used by all agents.
 \end{itemize}
-\lipsum[1]
+
+\subsubsection{Training Procedure}
+
+
+% TODO: UPDATE CURRICULUM LEARNING THINGY WITH THIS THINGY https://arxiv.org/pdf/2202.10608.pdf
+We trained all three policy configurations using self-play. As the policies are updated, the agents become stronger and thus have stronger opposition, so this algorithm is reminiscient of curriculum learning \cite{CurriculumLearning}. The training algorithm is summarized below:
+
+% self.lr_schedule = None
+%         self.lr = 5e-5
+%         self.rollout_fragment_length = "auto"
+%         self.train_batch_size = 4000
+
+%         # PPO specific settings:
+%         self.use_critic = True
+%         self.use_gae = True
+%         self.lambda_ = 1.0
+%         self.use_kl_loss = True
+%         self.kl_coeff = 0.2
+%         self.kl_target = 0.01
+%         self.sgd_minibatch_size = 128
+%         self.num_sgd_iter = 30
+%         self.shuffle_sequences = True
+%         self.vf_loss_coeff = 1.0
+%         self.entropy_coeff = 0.0
+%         self.entropy_coeff_schedule = None
+%         self.clip_param = 0.3
+%         self.vf_clip_param = 10.0
+%         self.grad_clip = None
+
+
+\begin{algorithm}
+  \SetKwInOut{Input}{Input}
+  \SetKwFor{RepTimes}{repeat}{times}{end}
+
+  \textbf{function} train (n, policy)
+
+  \Indp
+  
+  \Input{n: Number of training iterations \\
+         policy: Policy configuration}
+  
+  Initialize 6 policies following the given configuration, sharing parameters if necessary
+
+  \RepTimes{n} {
+    Sample a batch of experiences by playing against the other policies
+
+    Update the policies using PPO
+  }
+
+  \Indm
+  \textbf{end}
+  \caption{Agent self-play training procedure}
+\end{algorithm}
+
+
+\subsubsection{Evaluation Procedure}
+
+We evaluate the performance of the trained policies by having them play against a random agent. The number of wins is recorded, as well as the number of turns taken to win, both of which are used as evaluation metrics. The evaluation procedure is summarized below:
+
+\begin{algorithm}
+  \SetKwInOut{Input}{Input}
+  \SetKwFor{RepTimes}{repeat}{times}{end}
+
+  \textbf{function} evaluate (n, policy)
+
+  \Indp
+  
+  \Input{n: Number of evaluation games \\
+         policy: Policy configuration}
+  
+  Initialize player 0 to follow the given policy
+  
+  Initialize players 1-5 to follow a random policy
+
+  \RepTimes{n} {
+    Play a game with the given policies
+
+    Record whether the game was a win
+
+    Record the number of turns taken
+  }
+
+  \Return{Number of wins, average number of turns taken}
+
+  \Indm
+  \textbf{end}
+  \caption{Agent evaluation procedure}
+
+\end{algorithm}
 
 \section{Results}
 
@@ -249,6 +350,8 @@ We compare three different policy configurations for the multiple agents: fully-
 \lipsum[1]
 
 \section{Conclusion}
+
+\lipsum[1]
 
 %%%%%%%%%%%%%%
 % References %
