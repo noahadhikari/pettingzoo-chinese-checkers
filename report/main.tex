@@ -1,4 +1,12 @@
 % main.tex
+\documentclass[12pt, a4paper, twocolumn]{article}
+
+
+% half inch margins
+\usepackage{geometry}
+\geometry{left=0.5in,right=0.5in,top=0.5in,bottom=0.5in}
+
+
 \title{Article Title\cite{LinkReference1}}
 
 \author{Some Author\cite{Author1}}
@@ -11,7 +19,6 @@ Abstract goes here.
 % Configuration %
 %%%%%%%%%%%%%%%%%
 
-\documentclass[12pt, a4paper, twocolumn]{article}
 \usepackage{xurl}
 \usepackage[super,comma,sort&compress]{natbib}
 \usepackage{abstract}
@@ -19,33 +26,6 @@ Abstract goes here.
 \renewcommand{\abstracttextfont}{\normalfont\small\itshape}
 \usepackage{lipsum}
 
-%%%%%%%%%%%%%%
-% References %
-%%%%%%%%%%%%%%
-
-% If changing the name of the bib file, change \bibliography{main} at the bottom
-\begin{filecontents}{main.bib}
-
-@misc{LinkReference1,
-  title        = "Link Title",
-  author       = "Link Creator(s)",
-  howpublished = "\url{https://example.com/}",
-}
-
-@misc{Author1,
-  author       = "LastName, FirstName",
-  howpublished = "\url{mailto:email@example.com}",
-}
-
-@article{ArticleReference1,
-  author  = "Lastname1, Firstname1 and Lastname2, Firstname2",
-  title   = "Article title",
-  year    = "Year",
-  journal = "Journal name",
-  note    = "\url{https://dx.doi.org/...}",
-}
-
-\end{filecontents}
 
 % Any configuration that should be done before the end of the preamble:
 \usepackage{hyperref}
@@ -72,20 +52,31 @@ Abstract goes here.
 % Article %
 %%%%%%%%%%%
 
-\section{Section1Title}
+\section{Introduction}
 
-This is the first sentence\cite{ArticleReference1}.
+Multi-agent reinforcement learning (MARL) has been a growing topic of interest in recent years \cite{ArticleReference1}. Most prior work in this area has focused on two-player competitive, zero-sum games such as AlphaGo \cite{ArticleReference2} or positive-sum cooperative games\cite{ArticleReference3}. The behavior of agents in competitive environments with more than two players is much less well studied \cite{ArticleReference4}. 
 
-\section{Section2Title}
+
+\section{Methods}
 
 \lipsum[1]
+
+\section{Results}
+
+\lipsum[1]
+
+\section{Discussion}
+
+\lipsum[1]
+
+\section{Conclusion}
 
 %%%%%%%%%%%%%%
 % References %
 %%%%%%%%%%%%%%
 
 \nocite{*}
-\bibliographystyle{plain}
+\bibliographystyle{ieeetr}
 \bibliography{main}
 
 \end{document}
