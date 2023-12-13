@@ -7,9 +7,15 @@
 \geometry{left=0.5in,right=0.5in,top=0.5in,bottom=0.5in}
 
 
-\title{Article Title\cite{LinkReference1}}
+\title{Title}
 
-\author{Some Author\cite{Author1}}
+\author{Allen Gu and Noah Adhikari}
+
+
+\date{
+    University of California, Berkeley\\[2ex] % affiliation hack
+    December 13, 2023    
+}
 
 \newcommand{\abstractText}{\noindent
 Abstract goes here.
@@ -30,6 +36,12 @@ Abstract goes here.
 % Any configuration that should be done before the end of the preamble:
 \usepackage{hyperref}
 \hypersetup{colorlinks=true, urlcolor=blue, linkcolor=blue, citecolor=blue}
+
+
+\usepackage{array}
+\usepackage{listings}
+\usepackage[linesnumbered,ruled]{algorithm2e}
+\usepackage{amsmath}
 
 \begin{document}
 
@@ -54,11 +66,178 @@ Abstract goes here.
 
 \section{Introduction}
 
-Multi-agent reinforcement learning (MARL) has been a growing topic of interest in recent years \cite{ArticleReference1}. Most prior work in this area has focused on two-player competitive, zero-sum games such as AlphaGo \cite{ArticleReference2} or positive-sum cooperative games\cite{ArticleReference3}. The behavior of agents in competitive environments with more than two players is much less well studied \cite{ArticleReference4}. 
+Multi-agent reinforcement learning (MARL) has been a growing topic of interest in recent years \cite{ArticleReference1}. Most prior work in this area has focused on two-player competitive, zero-sum games such as Go \cite{ArticleReference2} or positive-sum cooperative games\cite{ArticleReference3}. Several frameworks and tools have been built to support these environments \cite{PettingZoo} \cite{Gym}. 
 
+The behavior of agents in competitive environments with more than two players is much less well studied \cite{ArticleReference4}. Stochastic games such as poker are popular in this domain \cite{ArticleReference5}, but complete-information environments are not as well studied. In this paper, we develop a custom PettingZoo environment for Chinese Checkers, a six-player competitive homogenous game, as well as study the performance of several MARL architectures on this environment.
+
+
+% chinese checkers citation 1 https://cs229.stanford.edu/proj2016spr/report/003.pdf
+% chinese checkers citation 2 https://arxiv.org/pdf/1903.01747.pdf
+Though reinforcement learning for Chinese Checkers has been explored before \cite{ArticleReference6}, our implementation is, to the best of our knowledge, the first to remain faithful to the true game.
+
+\section{Background}
+
+\subsection{Chinese Checkers Rules}
+
+Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of differing colors on a star-shaped board as seen in Figure \ref{fig:board}. Each player has 10 pieces, or pegs, which are initially placed in the corner of the board closest to them. The goal of the game is to move all of one's pieces to the corner of the board opposite to their starting corner.
+
+\subsubsection{Movement}
+The game is played in turns. On a player's turn, they must move one of their pegs to an adjacent empty hole, or jump over an adjacent peg of any color to an empty hole on the other side. A player may jump over multiple pegs in a single turn. A player can only move their own pegs. Only if a player has no possible moves may they pass their turn entirely.
+
+\subsubsection{Spoiling}
+It is possible for a player to prevent another from winning by continously occupying one of the pegs in their goal corner, in a process known as ``spoiling.'' There are no official rules preventing spoiling, and rules prohibiting it tend to be quite complicated, so we permit it in our implementation.
+
+\subsubsection{Winning}
+The first player to move all of their pegs to the opposite corner wins the game. Though it is possible to continue playing after this point ranking purposes, we focus on the variant where the game is terminated after the first player wins.
+
+\subsection{Hexagonal Coordinates}
+
+There are various ways to represent hexagonal coordinates. There is a nice symmetry between cubes and hexagons, where each axis of the cube corresponds to the projection in 2D-space of one of the three axes of the hexagon. One can then describe the position of a hexagon in terms of three coordinates $(q, r, s)$. Since the hexagonal grid lies in a plane, however, the coordinates are subject to the constraint $q + r + s = 0$. This is known as the cube coordinate system.
+
+Because of the planar constraint, only two of the three $qrs$-coordinates are necessary. $(q, r)$ is a common choice; this is known as the axial coordinate system.
+
+Figure \ref{fig:hex} shows the relationship between the two coordinate systems.
 
 \section{Methods}
 
+\subsection{Chinese Checkers Environment}
+
+\subsubsection{Turn Limits}
+
+Unlike games such as chess, which impose turn limits to prevent infinite horizons, Chinese Checkers has no such rule. We impose a turn limit that ends the game with no winners after a large, configurable amount of turns (we found $\approx 1000$ to be a good choice for $N=4$).
+
+\subsubsection{Submoves}
+Within a single move, it is possible to infinitely stall the game by jumping in a cycle around one or more pegs. To prevent this, we introduce the concept of submoves, where a submove is a single jump or non-jump move. Players may extend their turn using jumps, but cannot jump back to a cell they previously occupied on that turn. If a player makes a jump submove, they may move again; otherwise, their turn ends. Players can end their turn following a jump using the end-turn submove.
+
+\subsubsection{Board Representation}
+We represent variable board size as $N$, where $N$ represents the side lengths of one of the triangular corners of the board (so $N=4$ is traditional Chinese Checkers). The game board uses cube coordinates, with the center of the board being $(q, r, s) = (0, 0, 0)$.
+
+Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of side length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous cells are then masked out. We assign integer values to cells as follows:
+
+\begin{center}
+  \begin{tabular}{|m{0.05\textwidth}|m{0.35\textwidth}|}
+    \hline
+    Value & Description \\
+    \hline
+    -2 & Out-of-bounds \\
+    -1 & Empty \\
+    0 & Player 0 (red peg) \\
+    1 & Player 1 (black peg) \\
+    2 & Player 2 (yellow peg) \\
+    3 & Player 3 (green peg) \\
+    4 & Player 4 (blue peg) \\
+    5 & Player 5 (white peg) \\
+    \hline
+  \end{tabular}
+  \end{center}
+
+For symmetry, we rotate the board so that the current player's home triangle is at the top of the board when making moves. 
+  
+The 3D representation of the board is quite sparse, so we flatten the board with the axial coordinate constraint $q + r + s = 0$ when communicating with agents.
+
+\subsubsection{Observation Space}
+
+The observation space is a flattened representation of 8 different layers of the board, where each layer provides unique information about the game state. Each layer is as a two-dimensional $(4N + 1, 4N + 1)$ grid where row and column indices $(i, j)$ map to axial coordinates $(q, r)$ of the board space. To maintain rotational symmetry, the board is always rotated when creating the observation so that the current player's home triangle is at the top of the board. The layers represent the following binary information for each space on the board:
+
+\begin{center}
+\begin{tabular}{|m{0.05\textwidth}|m{0.35\textwidth}|}
+  \hline
+  Layer & Description \\
+  \hline
+  0 & Current player's pegs \\
+  1-5 & Other players' pegs, in clockwise order starting from the current player \\
+  6 & Where the current player has jumped from this turn \\
+  7 & Where the current player jumped during the last submove, if the last submove was a jump \\
+  \hline
+\end{tabular}
+\end{center}
+
+After flattening, the observation space becomes a one-dimensional $(4N + 1) \times (4N + 1) \times 8$ binary vector.
+
+% \vfill
+
+\subsubsection{Action Space}
+
+Actions in the Chinese Checkers environment are represented by a tuple $(q, r, \texttt{direction}, \texttt{is\_jump})$:
+
+\begin{center}
+  \begin{tabular}{|m{0.1\textwidth}|m{0.3\textwidth}|}
+    \hline
+    $(q, r)$ & Position of the peg being moved in axial coordinates \\
+    \texttt{direction} & Direction of movement from $0$ to $6$ in angle increments of $\frac{\pi}{3}$, where $0$ is due-right, $1$ is up-right, etc. \\
+    \texttt{is\_jump} & Whether the action is a jump \\
+    \hline
+  \end{tabular}
+  \end{center}
+
+A player may also end their turn immediately without a move (known as the end-turn action) if a previous submove was a jump or if no legal moves are available. Thus, we represent the action space as a discrete space of size $(4N + 1) \times (4N + 1) \times 6 \times 2 + 1$.
+
+\subsubsection{Action Masking}
+
+For each agent, the observation, in addition to the observation space, also includes an attribute \texttt{action\_mask} which is a binary vector of size $(4N + 1) \times (4N + 1) \times 6 \times 2 + 1$ that indicates which actions are legal for the current agent during the current submove. This is used to mask out illegal actions when sampling from the action space.
+
+\subsubsection{Rewards}
+
+Various reward schemes were tried:
+
+\begin{enumerate}
+  \item \textit{Sparse:} $+5$ for winning, $-1$ for losing, $0$ otherwise
+  \item Sparse reward, plus small \textit{goal bonuses} for entering pegs in the goal ($+0.1$) and penalties for removing them from the goal ($-0.1$)
+  \item Sparse reward, plus tiny \textit{movement bonuses} for moving forward ($+0.001$) and a small penalty for moving backward ($-0.001$)
+  \item $+5$ for winning, $0$ otherwise, plus goal and movement bonuses
+\end{enumerate}
+
+We found that agents with sparse rewards had difficulty learning, so we ultimately opted for a positive sum, dense reward scheme (4) due to the self-play nature of our problem.
+
+\subsubsection{Environment Stepping}
+
+The pseudocode for a single environment step within our game is summarized below. Each step corresponds to moving a single peg within the game or ending a turn. Consecutive jumps are handled across multiple environment steps.
+
+\begin{algorithm}
+  \SetKwInOut{Input}{Input}
+
+  \textbf{function} step (a)
+  
+  \Input{Action as an integer between 0 and $(4N + 1) \times (4N + 1) \times 6 \times 2$}
+  
+  Convert integer action to a move
+
+  Rotate the board for the current player and perform the move
+
+  Update rewards for agents
+
+  \uIf{the move is not a jump}
+    {
+      Advance to the next player
+    }
+
+  \caption{Environment stepping in Chinese Checkers}
+\end{algorithm}
+  
+\subsection{Multi-Agent Learning}
+
+There are many approaches to configuring the models in a multi-agent setting. In this section, we describe both model architectures and ho
+sorca derahs era serutcetihcra esoht 
+
+\subsubsection{Model Architecture}
+
+%TODO: does this citation work?%
+All agents learn through Proximal Policy Optimization (PPO) with a clipped surrogate objective\cite{PPO}. In our architecture, the actor and critic share an MLP encoder but have differing policy and value function heads.
+
+\textbf{Encoder Network:} The encoder network takes in inputs the size of the observation space. Each encoder contains a hidden layer of size 64 and output layer of size 64, with ReLU activation functions.
+
+\textbf{Policy Head:} The policy head a single fully connected layer of shape $(64, 12(4N + 1)^2)$ that outputs a vector the size of the action space.
+
+\textbf{Value Function Head:} The policy head a single fully connected layer of shape $(64, 1)$.
+
+\subsubsection{Variations on Multi-Agent Setup}
+
+We compare three different policy configurations for the multiple agents: fully-independent, shared-encoder, and fully-shared variations.
+\begin{itemize}
+  \item \textit{Fully-Independent:} Agents learn separately with their own single-agent PPO policy. 
+  \item \textit{Shared-Encoder:} All agents share the same encoder, but have unique policy and value function heads.
+  \item \textit{Fully-Shared:} Agents share all parameters, effectively training a single policy to be used by all agents.
+\end{itemize}
 \lipsum[1]
 
 \section{Results}
