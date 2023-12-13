@@ -1,0 +1,91 @@
+% main.tex
+\title{Article Title\cite{LinkReference1}}
+
+\author{Some Author\cite{Author1}}
+
+\newcommand{\abstractText}{\noindent
+Abstract goes here.
+}
+
+%%%%%%%%%%%%%%%%%
+% Configuration %
+%%%%%%%%%%%%%%%%%
+
+\documentclass[12pt, a4paper, twocolumn]{article}
+\usepackage{xurl}
+\usepackage[super,comma,sort&compress]{natbib}
+\usepackage{abstract}
+\renewcommand{\abstractnamefont}{\normalfont\bfseries}
+\renewcommand{\abstracttextfont}{\normalfont\small\itshape}
+\usepackage{lipsum}
+
+%%%%%%%%%%%%%%
+% References %
+%%%%%%%%%%%%%%
+
+% If changing the name of the bib file, change \bibliography{main} at the bottom
+\begin{filecontents}{main.bib}
+
+@misc{LinkReference1,
+  title        = "Link Title",
+  author       = "Link Creator(s)",
+  howpublished = "\url{https://example.com/}",
+}
+
+@misc{Author1,
+  author       = "LastName, FirstName",
+  howpublished = "\url{mailto:email@example.com}",
+}
+
+@article{ArticleReference1,
+  author  = "Lastname1, Firstname1 and Lastname2, Firstname2",
+  title   = "Article title",
+  year    = "Year",
+  journal = "Journal name",
+  note    = "\url{https://dx.doi.org/...}",
+}
+
+\end{filecontents}
+
+% Any configuration that should be done before the end of the preamble:
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, urlcolor=blue, linkcolor=blue, citecolor=blue}
+
+\begin{document}
+
+%%%%%%%%%%%%
+% Abstract %
+%%%%%%%%%%%%
+
+\twocolumn[
+  \begin{@twocolumnfalse}
+    \maketitle
+    \begin{abstract}
+      \abstractText
+      \newline
+      \newline
+    \end{abstract}
+  \end{@twocolumnfalse}
+]
+
+%%%%%%%%%%%
+% Article %
+%%%%%%%%%%%
+
+\section{Section1Title}
+
+This is the first sentence\cite{ArticleReference1}.
+
+\section{Section2Title}
+
+\lipsum[1]
+
+%%%%%%%%%%%%%%
+% References %
+%%%%%%%%%%%%%%
+
+\nocite{*}
+\bibliographystyle{plain}
+\bibliography{main}
+
+\end{document}
