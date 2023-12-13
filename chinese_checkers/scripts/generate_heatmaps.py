@@ -25,6 +25,8 @@ from ray.tune.logger import pretty_print
 from ray.rllib.policy.policy import Policy
 
 from chinese_checkers import chinese_checkers_v0
+from chinese_checkers.env.chinese_checkers_utils import action_to_move
+from chinese_checkers.env.game import Move
 from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
 from chinese_checkers.models.action_masking import ActionMaskModel
 from chinese_checkers.scripts.logger import custom_log_creator
@@ -109,7 +111,8 @@ def eval(checkpoint_path: str = None, eval_config=None):
     policy = Policy.from_checkpoint(checkpoint_path)
     print(policy)
     if "default_policy" in policy:
-        policies = {f"player_{i}": policy["default_policy"] for i in range(6)}
+        # policies = {f"player_{i}": policy["default_policy"] for i in range(6)}
+        policies = {f"player_{i}": policy["default_policy"] if i == 0 else ChineseCheckersRandomPolicy(2) for i in range(6)}
     else:
         policies = {f"player_{i}": policy[f"policy_{i}"] for i in range(6)}
         
@@ -129,16 +132,16 @@ def evaluate_policies(policies, eval_config):
 
     total_rewards = {agent: 0 for agent in env.possible_agents}
     wins = {agent: 0 for agent in env.possible_agents}
-    num_moves = []
 
     boards = []
+    num_turns = []
 
     for i in tqdm(range(eval_num_trials)):
         env.reset(seed=i)
         for a in range(6):
             env.action_space(env.possible_agents[a]).seed(i)
 
-        num_moves = 0
+        turns = 0
         for agent in env.agent_iter():
             obs, reward, termination, truncation, info = env.last()
             total_rewards[agent] += reward
@@ -147,14 +150,15 @@ def evaluate_policies(policies, eval_config):
             else:
                 action = policies[agent].compute_single_action(obs)
             act = int(action[0])
+            move = action_to_move(act, triangle_size)
             if render_mode:
                 env.render()
-
-            if num_moves == 10:
-                boards.append(env.unwrapped.game.get_axial_board(0))
-            num_moves += 1
+            if agent == "player_0" and (move == Move.END_TURN or not move.is_jump):
+                turns += 1
+                if turns == 15:
+                    boards.append(env.unwrapped.game.get_axial_board(0))
             env.step(act)
-    
+        num_turns.append(turns)
     with open("boards.npy", "wb") as f:
         np.save(f, np.array(boards))
     env.close()
@@ -164,14 +168,13 @@ def evaluate_policies(policies, eval_config):
     print("Total rewards (incl. negative rewards): ", total_rewards)
     print("Average rewards (incl. negative rewards): ", average_rewards)
     print("Winrate: ", winrate)
-    print("Average moves:", np.mean(num_moves))
+    print("Average turns to win:", np.mean(num_turns))
 
     return {
         "eval_num_trials": eval_num_trials,
         "eval_total_rewards": total_rewards["player_0"],
         "eval_average_rewards": average_rewards["player_0"],
         "eval_win_rate": winrate,
-        "eval_average_moves": np.mean(num_moves)
     }
 
 class ChineseCheckersRandomPolicy(Policy):
@@ -223,10 +226,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='RLLib train/eval script'
     )
-    parser.add_argument('-er', '--eval_random',
-                        action='store_true')  # on/off flag
-    parser.add_argument('-es', '--eval_self',
-                        action='store_true')  # on/off flag
     parser.add_argument('-p', '--policy_name', default="default_policy")
     parser.add_argument('--triangle_size', type=int, required=True)
     parser.add_argument('--eval_num_trials', type=int, default=10)
