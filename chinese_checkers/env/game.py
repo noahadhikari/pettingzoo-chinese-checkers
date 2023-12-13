@@ -1,4 +1,5 @@
 import functools
+import PIL
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -564,3 +565,12 @@ class ChineseCheckers:
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
             )
+        
+if __name__ == "__main__":
+    game = ChineseCheckers(2, "rgba_array")
+    frame = game.render()
+    print(frame)
+    plt.imshow(frame)
+    with open("frame.npy", "wb") as f:
+        np.save(f, frame)
+    

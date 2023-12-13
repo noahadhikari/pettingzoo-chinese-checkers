@@ -102,69 +102,61 @@ def train(config, model_name: str, train_config):
         
     return algo
 
-def eval(policy_name: str = "default_policy", checkpoint_path: str = None, against_self: bool = False, eval_config=None):
+def eval(checkpoint_path: str = None, eval_config=None):
     # Evaluate a trained agent vs a random agent
 
     # Use the `from_checkpoint` utility of the Policy class:
     policy = Policy.from_checkpoint(checkpoint_path)
-    policy = policy[policy_name]
-
-    # Use the restored policy for serving actions.
-    if against_self:
-        evaluate_policies(policy, policy, eval_config)
+    print(policy)
+    if "default_policy" in policy:
+        policies = {f"player_{i}": policy["default_policy"] for i in range(6)}
     else:
-        evaluate_policy_against_random(policy, eval_config)
-    
+        policies = {f"player_{i}": policy[f"policy_{i}"] for i in range(6)}
+        
+    evaluate_policies(policies, eval_config)
 
-def evaluate_policies(eval_policy, baseline_policy, eval_config):
+def evaluate_policies(policies, eval_config):
     """
     Evaluate two policies against one another. eval_policy will play as player 0, baseline_policy will play as player 1-5.
     """
+
     triangle_size = eval_config["triangle_size"]
     eval_num_trials = eval_config["eval_num_trials"]
     eval_max_iters = eval_config["eval_max_iters"]
     render_mode = eval_config["render_mode"]
 
     env = chinese_checkers_v0.env(render_mode=render_mode, triangle_size=triangle_size, max_iters=eval_max_iters)
-    print(
-        f"Starting evaluation of {eval_policy} against baseline {baseline_policy}. Trained agent will play as {env.possible_agents[0]}."
-    )
 
     total_rewards = {agent: 0 for agent in env.possible_agents}
     wins = {agent: 0 for agent in env.possible_agents}
-    iters = []
     num_moves = []
+
+    boards = []
 
     for i in tqdm(range(eval_num_trials)):
         env.reset(seed=i)
         for a in range(6):
             env.action_space(env.possible_agents[a]).seed(i)
 
+        num_moves = 0
         for agent in env.agent_iter():
             obs, reward, termination, truncation, info = env.last()
             total_rewards[agent] += reward
             if termination or truncation:
                 break
             else:
-                if agent == env.possible_agents[0]:
-                    action = eval_policy.compute_single_action(obs)
-                else:
-                    action = baseline_policy.compute_single_action(obs)
+                action = policies[agent].compute_single_action(obs)
             act = int(action[0])
             if render_mode:
                 env.render()
+
+            if num_moves == 10:
+                boards.append(env.unwrapped.game.get_axial_board(0))
+            num_moves += 1
             env.step(act)
-
-        iters.append(env.unwrapped.iters)
-        num_moves.append(env.unwrapped.num_moves)
-
-        # accumulate rewards after game ends
-        for agent in env.possible_agents:
-            rew = env._cumulative_rewards[agent]
-            total_rewards[agent] += rew
-        if env.unwrapped.winner:
-            wins[env.unwrapped.winner] += 1
-   
+    
+    with open("boards.npy", "wb") as f:
+        np.save(f, np.array(boards))
     env.close()
 
     winrate = wins[env.possible_agents[0]] / eval_num_trials
@@ -172,7 +164,6 @@ def evaluate_policies(eval_policy, baseline_policy, eval_config):
     print("Total rewards (incl. negative rewards): ", total_rewards)
     print("Average rewards (incl. negative rewards): ", average_rewards)
     print("Winrate: ", winrate)
-    print("Average iterations:", np.mean(iters))
     print("Average moves:", np.mean(num_moves))
 
     return {
@@ -180,7 +171,6 @@ def evaluate_policies(eval_policy, baseline_policy, eval_config):
         "eval_total_rewards": total_rewards["player_0"],
         "eval_average_rewards": average_rewards["player_0"],
         "eval_win_rate": winrate,
-        "eval_average_iters": np.mean(iters),
         "eval_average_moves": np.mean(num_moves)
     }
 
@@ -221,15 +211,11 @@ def main(args):
         "triangle_size": args.triangle_size,
         "eval_max_iters": args.eval_max_iters,
         "eval_num_trials": args.eval_num_trials,
-        "render_mode": "human"
+        "render_mode": args.render_mode
     }
-    if args.eval_random:
-        eval(policy_name=args.policy_name, against_self=False, checkpoint_path=args.checkpoint_path, eval_config=eval_config)
-    elif args.eval_self:
-        eval(policy_name=args.policy_name, against_self=True, checkpoint_path=args.checkpoint_path, eval_config=eval_config)
-    else:
-        print("Did not specify train or eval.")
-        return
+
+    eval(args.checkpoint_path, eval_config)
+    
     print("Finished successfully without selecting invalid actions.")
     ray.shutdown()
 
@@ -246,5 +232,6 @@ if __name__ == "__main__":
     parser.add_argument('--eval_num_trials', type=int, default=10)
     parser.add_argument('--eval_max_iters', type=int, default=300)
     parser.add_argument('--checkpoint_path', type=str, required=False)
+    parser.add_argument('--render_mode', default=None)
     args = parser.parse_args()
     main(args)
