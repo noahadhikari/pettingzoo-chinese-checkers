@@ -40,7 +40,7 @@ Abstract goes here.
 
 \usepackage{array}
 \usepackage{listings}
-\usepackage[noline,linesnumbered,ruled]{algorithm2e}
+\usepackage[noline,ruled]{algorithm2e}
 \usepackage{amsmath}
 
 \begin{document}
@@ -306,9 +306,11 @@ We trained all three policy configurations using self-play. As the policies are 
 \end{algorithm}
 
 
-\subsubsection{Evaluation Procedure}
+\subsubsection{Evaluation Procedures}
 
-We evaluate the performance of the trained policies by having them play against a random agent. The number of wins is recorded, as well as the number of turns taken to win, both of which are used as evaluation metrics. The evaluation procedure is summarized below:
+We evaluate the performance of trained agents via several metrics.
+
+\textit{Random agent evaluation}: The evaluated agent plays against a field of random agents. The number of wins and the number of turns taken to win are both recorded and can be used for evaluation purposes.
 
 \begin{algorithm}
   \SetKwInOut{Input}{Input}
@@ -337,9 +339,14 @@ We evaluate the performance of the trained policies by having them play against 
 
   \Indm
   \textbf{end}
-  \caption{Agent evaluation procedure}
+  \caption{Evaluation procedure against random agents}
 
 \end{algorithm}
+
+\textit{Team matches}: Each of the three architectures contributes two agents in a match of six players. The positions of the agents are randomized, and the agents play a game against each other. The number of wins and the number of turns taken to win are both recorded and can be used for evaluation purposes.
+
+
+
 
 \section{Results}
 
