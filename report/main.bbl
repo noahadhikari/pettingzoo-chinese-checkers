@@ -1,0 +1,18 @@
+\begin{thebibliography}{1}
+
+\bibitem{LinkReference1}
+Link Creator(s).
+\newblock Link title.
+\newblock \url{https://example.com/}.
+
+\bibitem{Author1}
+FirstName LastName.
+\newblock \url{mailto:email@example.com}.
+
+\bibitem{ArticleReference1}
+Firstname1 Lastname1 and Firstname2 Lastname2.
+\newblock Article title.
+\newblock {\em Journal name}, Year.
+\newblock \url{https://dx.doi.org/...}
+
+\end{thebibliography}
