@@ -354,6 +354,8 @@ dmypy.json
 **/*.synctex.gz
 **/*.synctex.gz\(busy\)
 **/*.synctex\(busy\)
+**/*.blg
+**/*.bbl
 **/*.out
 # to prevent recompilation
 **/main.pdf
