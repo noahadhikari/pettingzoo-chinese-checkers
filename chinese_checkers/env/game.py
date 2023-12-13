@@ -567,10 +567,14 @@ class ChineseCheckers:
             )
         
 if __name__ == "__main__":
-    game = ChineseCheckers(2, "rgba_array")
-    frame = game.render()
-    print(frame)
-    plt.imshow(frame)
-    with open("frame.npy", "wb") as f:
-        np.save(f, frame)
+    fig, ax = plt.subplots(1, 3, figsize=(10, 3))
+    for i, size in enumerate([2, 3, 4]):
+        game = ChineseCheckers(size, "rgba_array")
+        frame = game.render()
+        ax[i].imshow(frame)
+        ax[i].set_xticks([])
+        ax[i].set_yticks([])
+        ax[i].set_title(rf"$N$ = {size}")
+    plt.tight_layout()
+    plt.savefig("frame.png")
     
