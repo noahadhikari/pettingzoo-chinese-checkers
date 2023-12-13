@@ -42,6 +42,13 @@ Abstract goes here.
 \usepackage{listings}
 \usepackage[noline,ruled]{algorithm2e}
 \usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{graphicx}
+\usepackage{multicol}
+
+\usepackage{etoolbox}
+\preto\align{\par\nobreak\small\noindent}
+\expandafter\preto\csname align*\endcsname{\par\nobreak\small\noindent}
 
 \begin{document}
 
@@ -79,7 +86,7 @@ Though reinforcement learning for Chinese Checkers has been explored before \cit
 
 \subsection{Chinese Checkers Rules}
 
-Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of differing colors on a star-shaped board as seen in Figure \ref{fig:board}. Each player has 10 pegs, which are initially placed in the corner of the board closest to them. The goal of the game is to move all of one's pegs to the corner of the board opposite to their starting corner.
+Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of differing colors on a star-shaped board as seen in Figure \ref{fig:board}. Each player traditionally has 10 pegs, which are initially placed in the corner of the board closest to them. The goal of the game is to move all of one's pegs to the corner of the board opposite to their starting corner.
 
 \subsubsection{Movement}
 The game is played in turns. On a player's turn, they must move one of their pegs to an adjacent empty space, or jump over an adjacent peg of any color to an empty space on the other side. A player may jump over multiple pegs in a single turn in a process known as ``chaining'' \cite{ChainingJumps}. A player can only move their own pegs. Only if a player has no possible moves may they pass their turn entirely.
@@ -100,9 +107,29 @@ Because of the planar constraint, only two of the three $qrs$-coordinates are ne
 
 Figure \ref{fig:hex} shows the relationship between the two coordinate systems.
 
+\subsection{Proximal Policy Optimization (PPO)}
+
+Proximal Policy Optimization\cite{PPO} (PPO) is an on-policy method with an architecture similar to actor-critic algorithms. However, it addresses stability concerns in traditional actor-critic algorithms by limiting large policy updates. The algorithm accomplishes this through a clipped surrogate objective.
+
+% TODO: HELP idk how to make the font smaller :'( %
+\begin{align*}
+  L = \mathbb{E}[\min(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)} \hat{A_t}, \text{clip}(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)}, 1 - \epsilon, 1 + \epsilon) \hat{A_t})]
+\end{align*}
+
+In the objective, the advantage terms incentivizes taking actions that are better than average. The ratio $\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)}$ is a measure of how far the new policy deviates from the previous one. By clipping and minimizing with the non-clipped ratio, the objective also deters making large changes to the policy. 
+
 \section{Methods}
 
 \subsection{Chinese Checkers Environment}
+
+We developed a custom PettingZoo environment for Chinese Checkers to support MARL. The board has the same shape as the traditional game, but can be configured to play with different sizes $N$. For example, the $N = 2$ variation that we used for many experiments has 3 pegs per player. In axial coordinates, this board can be represented by a 2D array of size $(4N + 1, 4N + 1)$ because an axis through the center of the board has $4N + 1$ slots.
+
+\begin{figure}
+  \centering
+    \includegraphics[width=0.5\textwidth]{images/boards.png}
+  \caption{Game boards of size $N = 2, 3, 4$}
+  \label{fig:boards}
+\end{figure}
 
 \subsubsection{Number of Players}
 
@@ -173,13 +200,15 @@ Actions in the Chinese Checkers environment are represented by a tuple $(q, r, \
   \begin{tabular}{|m{0.1\textwidth}|m{0.3\textwidth}|}
     \hline
     $(q, r)$ & Position of the peg being moved in axial coordinates \\
+    \hline
     \texttt{direction} & Direction of movement from $0$ to $6$ in angle increments of $\frac{\pi}{3}$, where $0$ is due-right, $1$ is up-right, etc. \\
+    \hline
     \texttt{is\_jump} & Whether the action is a jump \\
     \hline
   \end{tabular}
   \end{center}
 
-A player may also end their turn immediately without a move (known as the end-turn action) if a previous submove was a jump or if no legal moves are available. Thus, we represent the action space as a discrete space of size $(4N + 1) \times (4N + 1) \times 6 \times 2 + 1$.
+  If a previous submove was a jump or if no legal moves are available, a player may also end their turn immediately without a move (known as the end-turn action)  Thus, we represent the action space as a discrete space of size $(4N + 1) \times (4N + 1) \times 6 \times 2 + 1$.
 
 \subsubsection{Action Masking}
 
@@ -209,7 +238,7 @@ The pseudocode for a single environment step within our game is summarized below
   
   \Indp
 
-  \Input{a: Integer action in $[0, (4N + 1) \times (4N + 1) \times 6 \times 2 + 1)$}
+  \Input{\textit{a}: Integer action in $[0, (4N + 1) \times (4N + 1) \times 6 \times 2 + 1)$}
   
   Convert integer action to a submove
 
@@ -239,9 +268,9 @@ All agents learn through Proximal Policy Optimization (PPO) with a clipped surro
 
 \textbf{Encoder Network:} The encoder network takes in a vector the size of the observation space as input. Each encoder contains a hidden layer of size 64 and output layer of size 64, with ReLU activation functions.
 
-\textbf{Policy Head:} The policy head is a single fully connected layer of shape $(64, 12(4N + 1)^2 + 1)$ that takes the encoder output as input and outputs a vector the size of the action space.
+\textbf{Policy Head:} The policy head is a single fully connected network of shape $(64, 12(4N + 1)^2 + 1)$ that takes the encoder output as input and outputs action logits.
 
-\textbf{Value Function Head:} The value function head is a single fully connected layer of shape $(64, 1)$ that takes the encoder output as input and outputs a scalar corresponding to the value of the state.
+\textbf{Value Function Head:} The value function head is a single fully connected network of shape $(64, 1)$ that takes the encoder output as input and outputs a scalar estimating the value of the state.
 
 \subsubsection{Variations on Multi-Agent Setup}
 
@@ -249,11 +278,10 @@ We compare three different policy configurations for the multiple agents: fully-
 \begin{itemize}
   \item \textit{Fully-Independent:} Agents learn separately with their own single-agent PPO policy. 
   \item \textit{Shared-Encoder:} All agents share the same encoder, but have unique policy and value function heads.
-  \item \textit{Fully-Shared:} Agents share all parameters, effectively training a single policy to be used by all agents.
+  \item \textit{Fully-Shared:} Agents share all parameters, effectively training a single policy.
 \end{itemize}
 
 \subsubsection{Training Procedure}
-
 
 % TODO: UPDATE CURRICULUM LEARNING THINGY WITH THIS THINGY https://arxiv.org/pdf/2202.10608.pdf
 We trained all three policy configurations using self-play. As the policies are updated, the agents become stronger and thus have stronger opposition, so this algorithm is reminiscient of curriculum learning \cite{CurriculumLearning}. The training algorithm is summarized below:
@@ -289,8 +317,8 @@ We trained all three policy configurations using self-play. As the policies are 
 
   \Indp
   
-  \Input{n: Number of training iterations \\
-         policy: Policy configuration}
+  \Input{\textit{n}: Number of training iterations \\
+         \textit{policy}: Policy configuration}
   
   Initialize 6 policies following the given configuration, sharing parameters if necessary
 
@@ -314,14 +342,17 @@ We evaluate the performance of trained agents via several metrics.
 
 \begin{algorithm}
   \SetKwInOut{Input}{Input}
+  \SetKwInOut{Output}{Output}
   \SetKwFor{RepTimes}{repeat}{times}{end}
 
   \textbf{function} evaluate (n, policy)
 
   \Indp
   
-  \Input{n: Number of evaluation games \\
-         policy: Policy configuration}
+  \Input{\textit{n}: Number of evaluation games \\
+         \textit{policy}: Policy configuration}
+  \Output{\textit{wins}: Number of wins during evaluation play \\
+          \textit{turns}: Average number of turns to win}
   
   Initialize player 0 to follow the given policy
   
@@ -335,12 +366,9 @@ We evaluate the performance of trained agents via several metrics.
     Record the number of turns taken
   }
 
-  \Return{Number of wins, average number of turns taken}
-
   \Indm
   \textbf{end}
   \caption{Evaluation procedure against random agents}
-
 \end{algorithm}
 
 \textit{Team matches}: Each of the three architectures contributes two agents in a match of six players. The positions of the agents are randomized, and the agents play a game against each other. The number of wins and the number of turns taken to win are both recorded and can be used for evaluation purposes.
@@ -348,9 +376,46 @@ We evaluate the performance of trained agents via several metrics.
 
 
 
-\section{Results}
+\section{Experiments}
 
-\lipsum[1]
+\subsection{Comparison of Multi-Agent Configurations}
+
+First, we compare the different multi-agent setups: fully-independent, shared-encoder, and fully-shared. Each algorithm was trained over 100 iterations of 4000 timesteps each, with evaluation after every timestep. During evaluation, one trained policy would compete for 30 rounds against five random policies until one player wins or 150 turns have been played.
+
+% TODO: how do you make these two figures go side by side across columns instead of on one column %
+\begin{figure}[ht]
+  \centering
+    \includegraphics[width=0.47\textwidth]{images/winrate.png}
+    \includegraphics[width=0.47\textwidth]{images/game_length.png}
+  \label{fig:winrate}
+  \caption{Win rate when evaluated against five random policies. Evaluation occurred at repeated intervals throughout training for fully-independent, shared-encoder, and fully-shared multi-agent configurations.}
+\end{figure}
+
+From the results in Figure \ref{fig:winrate}, we find that as more parameters are shared between the agents, the more efficient our training becomes. Full parameter sharing reached over a 90\% winrate in less than 50,000 environment steps of training while the fully-independent algorithm took almost 200,000 environment steps.
+
+Additionally, the game durations during evaluation were shorter for parameter-sharing methods. The policy trained through a fully-shared approach was able to win in fewer turns, where one turn consists of all moves made by a single player before allowing the next player to act. From Figure \ref{fig:game_length}, full parameter sharing converges to a policy that wins in nearly 20 moves, faster than the other two approaches.
+
+A naive strategy for Chinese checkers could be to move each piece from the home triangle to the target triangle one by one, without jumps. For a board of size $N = 2$, this strategy performs 20 moves. The optimal strategy including jumps would improve this by a couple moves. Interestingly, even when facing opponents that may both harm (e.g. block the target triangle) or help (e.g. increase the potential for jumps), our model is near this hypothetical optimum.
+
+\subsection{Training Convergence}
+
+Although all trained models eventually reach a 100\% win-rate against random players, the models can still improve their strategies. For example, all models seem to move the pieces to the target zone in an independent fashion: moving one piece first, then the next, and so on. A better approach could be to collaborate and create jump opportunities for the other pegs to advance.
+
+% TODO: make this one big too %
+% TODO: this plot should probably use the same color scale %
+
+\begin{figure}[ht]
+  \centering
+    \includegraphics[width=0.47\textwidth]{images/random_heatmap.png}
+  \label{fig:heatmap}
+  \caption{Heatmaps for the policy trained through full parameter sharing. These plots show the frequency of different peg locations on the board after a varying amount of turns have been made.}
+\end{figure}
+
+To understand the strategy that policies learn in training, various checkpoints from training were run 100 times against five random opponents. During each game, the board states were collected at different numbers of turns. These board states were used to generate heat maps showing the frequency of pegs throughout the board.
+
+This behavior seems to be learned early on in training, as shown by Figure \ref{fig:heatmap}. By the 10th iteration, we see in later turns like turn 15 that there is a high probability that some pegs are still in the home triangle while others have already made it to the target triangle. A similar pattern can still be seen on the 99th training iteration. Although we see it earlier, by turn 5, many pegs are still left in the home triangle while others are far down the board.
+
+
 
 \section{Discussion}
 
