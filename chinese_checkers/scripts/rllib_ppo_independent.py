@@ -25,8 +25,9 @@ from chinese_checkers import chinese_checkers_v0
 from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
 from chinese_checkers.models.action_masking import ActionMaskModel
 from chinese_checkers.scripts.logger import custom_log_creator
+from chinese_checkers.scripts.rllib_marl import train
 
-def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
+def create_config(env_name: str, obs_space, act_space, triangle_size: int = 4):
     rlm_class = TorchActionMaskRLM
 
     rlm_spec = SingleAgentRLModuleSpec(module_class=rlm_class, model_config_dict={
@@ -78,6 +79,7 @@ def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
             # vf_loss_coeff=0.25,
             # sgd_minibatch_size=64,
             # num_sgd_iter=10,
+            _enable_learner_api=True
         )
         # We need to disable preprocessing of observations, because preprocessing
         # would flatten the observation dict of the environment.
@@ -96,30 +98,7 @@ def train(env_name: str, obs_space, act_space, triangle_size: int = 4):
         )
         .rl_module(rl_module_spec=rlm_spec)
     )
-    print(config.to_dict())
-    
-    algo = config.build(logger_creator=custom_log_creator(os.path.join(os.curdir, "logs"), ''))
-
-    # run manual training loop and print results after each iteration
-    for i in range(100):
-        result = algo.train()
-        timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logdir = "{}_{}".format("checkpoints/chinese_checkers_independent", timestr)
-        save_result = algo.save(checkpoint_dir=logdir)
-        path_to_checkpoint = save_result.checkpoint.path
-        print(
-            "An Algorithm checkpoint has been created inside directory: "
-            f"'{path_to_checkpoint}'."
-        )
-        # print(pretty_print(result))
-        print(f"""
-              Iteration {i}: episode_reward_mean = {result['episode_reward_mean']},
-                             episode_reward_max  = {result['episode_reward_max']},
-                             episode_reward_min  = {result['episode_reward_min']},
-                             episode_len_mean    = {result['episode_len_mean']}
-              """)
-    # evaluate_policy_against_random(algo.get_policy(), triangle_size=triangle_size)
-    return algo
+    return config
 
 def main(args):
     # define how to make the environment. This way takes an optional environment config
@@ -128,6 +107,7 @@ def main(args):
 
     # register that way to make the environment under an rllib name
     env_name = 'chinese_checkers_v0'
+    model_name = 'independent'
     register_env(env_name, lambda config: PettingZooEnv(env_creator(config)))
 
     test_env = PettingZooEnv(env_creator({"triangle_size": 2}))
@@ -136,24 +116,30 @@ def main(args):
     act_space = test_env.action_space["player_0"]
 
     ray.init(num_cpus=1 or None, local_mode=True)
-    if args.train:
-        algo = train(env_name, obs_space, act_space, triangle_size=args.triangle_size)
-    elif args.eval:
-        eval(triangle_size=args.triangle_size)
-    else:
-        print("Did not specify train or eval.")
-        return
+    config = create_config(env_name, obs_space, act_space, args.triangle_size)
+    train_config = {
+        "triangle_size": args.triangle_size,
+        "train_iters": args.train_iters,
+        "eval_period": args.eval_period,
+        "eval_num_trials": args.eval_num_trials,
+        "eval_max_iters": args.eval_max_iters,
+        "render_mode": args.render_mode,
+    }
+    train(config, model_name, train_config)
     print("Finished successfully without selecting invalid actions.")
     ray.shutdown()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog='RLLib train/eval script'
+        prog='RLLib train script'
     )
-    parser.add_argument('-e', '--eval',
-                        action='store_true')  # on/off flag
     parser.add_argument('-t', '--train',
                         action='store_true')  # on/off flag
-    parser.add_argument('-s', '--triangle_size', type=int, required=True)
+    parser.add_argument('--train_iters', type=int, default=100)  # on/off flag
+    parser.add_argument('--triangle_size', type=int, required=True)
+    parser.add_argument('--eval_period', type=int, default=5)
+    parser.add_argument('--eval_num_trials', type=int, default=10)
+    parser.add_argument('--eval_max_iters', type=int, default=400)
+    parser.add_argument('--render_mode', type=str, default=None)
     args = parser.parse_args()
     main(args)

@@ -40,8 +40,9 @@ class SharedEncoder(TorchModel, Encoder):
         super().__init__(config)
         self.net = nn.Sequential(
             nn.Linear(config.input_dim, config.hidden_dims[0]),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(config.hidden_dims[0], config.hidden_dims[1]),
+            nn.ReLU(),
         )
         if config.freeze:
             # We don't want to train this encoder, so freeze its parameters!

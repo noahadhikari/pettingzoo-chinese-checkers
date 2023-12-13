@@ -25,8 +25,9 @@ from chinese_checkers import chinese_checkers_v0
 from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
 from chinese_checkers.models.action_masking import ActionMaskModel
 from chinese_checkers.scripts.logger import custom_log_creator
+from chinese_checkers.scripts.rllib_marl import train
 
-def train(env_name: str, triangle_size: int = 4):
+def create_config(env_name: str, triangle_size: int = 4):
     rlm_class = TorchActionMaskRLM
 
     model_config = {
@@ -74,6 +75,7 @@ def train(env_name: str, triangle_size: int = 4):
             # vf_loss_coeff=0.25,
             # sgd_minibatch_size=64,
             # num_sgd_iter=10,
+            _enable_learner_api=True
         )
         # We need to disable preprocessing of observations, because preprocessing
         # would flatten the observation dict of the environment.
@@ -88,167 +90,48 @@ def train(env_name: str, triangle_size: int = 4):
         )
         .rl_module(rl_module_spec=rlm_spec)
     )
-    print(config.to_dict())
+    return config
     
-    algo = config.build(logger_creator=custom_log_creator(os.path.join(os.curdir, "logs"), ''))
-
-    # run manual training loop and print results after each iteration
-    for i in range(100):
-        result = algo.train()
-        timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logdir = "{}_{}".format("checkpoints/chinese_checkers_fully_shared", timestr)
-        save_result = algo.save(checkpoint_dir=logdir)
-        path_to_checkpoint = save_result.checkpoint.path
-        print(
-            "An Algorithm checkpoint has been created inside directory: "
-            f"'{path_to_checkpoint}'."
-        )
-        # print(pretty_print(result))
-        print(f"""
-              Iteration {i}: episode_reward_mean = {result['episode_reward_mean']},
-                             episode_reward_max  = {result['episode_reward_max']},
-                             episode_reward_min  = {result['episode_reward_min']},
-                             episode_len_mean    = {result['episode_len_mean']}
-              """)
-    evaluate_policy_against_random(algo.get_policy(), triangle_size=triangle_size)
-    return algo
-
-def eval(triangle_size: int = 4, num_games: int = 2):
-    # Evaluate a trained agent vs a random agent
-
-    # Use the `from_checkpoint` utility of the Policy class:
-    checkpoint_path = "checkpoints/chinese_checkers_2023-12-11_20-50-16"
-    policy = Policy.from_checkpoint(checkpoint_path)
-    policy = policy['default_policy']
-
-    # Use the restored policy for serving actions.
-    evaluate_policy_against_itself(policy, triangle_size=triangle_size)
-    
-
-def evaluate_policy_against_random(policy, triangle_size=4, num_games=2):
-    env = chinese_checkers_v0.env(render_mode="human", triangle_size=triangle_size)
-    print(
-        f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[0]}."
-    )
-
-    scores = {agent: 0 for agent in env.possible_agents}
-    total_rewards = {agent: 0 for agent in env.possible_agents}
-    round_rewards = []
-
-    for i in range(num_games):
-        env.reset(seed=i)
-        env.action_space(env.possible_agents[0]).seed(i)
-
-        for agent in env.agent_iter():
-            obs, reward, termination, truncation, info = env.last()
-
-            # Separate observation and action mask
-            observation, action_mask = obs.values()
-
-            if termination or truncation:
-                break
-            else:
-                if agent == env.possible_agents[0]:
-                    action = policy.compute_single_action(obs)
-                    # Note: PettingZoo expects integer actions # TODO: change chess to cast actions to type int?
-                    act = int(
-                        action[0]
-                    )
-                else:
-                    act = env.action_space(agent).sample(action_mask)
-            env.render()
-            env.step(act)
-    env.close()
-
-    # Avoid dividing by zero
-    if sum(scores.values()) == 0:
-        winrate = 0
-    else:
-        winrate = scores[env.possible_agents[1]] / sum(scores.values())
-    print("Rewards by round: ", round_rewards)
-    print("Total rewards (incl. negative rewards): ", total_rewards)
-    print("Winrate: ", winrate)
-    print("Final scores: ", scores)
-    return round_rewards, total_rewards, winrate, scores
-
-def evaluate_policy_against_itself(policy, triangle_size=4, num_games=2):
-    env = chinese_checkers_v0.env(render_mode="human", triangle_size=triangle_size)
-    print(
-        f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[0]}."
-    )
-
-    scores = {agent: 0 for agent in env.possible_agents}
-    total_rewards = {agent: 0 for agent in env.possible_agents}
-    round_rewards = []
-
-    for i in range(num_games):
-        env.reset(seed=i)
-        env.action_space(env.possible_agents[0]).seed(i)
-
-        for agent in env.agent_iter():
-            obs, reward, termination, truncation, info = env.last()
-
-            # Separate observation and action mask
-            observation, action_mask = obs.values()
-
-            if termination or truncation:
-                break
-            else:
-                action = policy.compute_single_action(obs)
-                # Note: PettingZoo expects integer actions # TODO: change chess to cast actions to type int?
-                act = int(
-                    action[0]
-                )
-            env.render()
-            env.step(act)
-    env.close()
-
-    # Avoid dividing by zero
-    if sum(scores.values()) == 0:
-        winrate = 0
-    else:
-        winrate = scores[env.possible_agents[1]] / sum(scores.values())
-    print("Rewards by round: ", round_rewards)
-    print("Total rewards (incl. negative rewards): ", total_rewards)
-    print("Winrate: ", winrate)
-    print("Final scores: ", scores)
-    return round_rewards, total_rewards, winrate, scores
-
 def main(args):
-    # define how to make the environment. This way takes an optional environment config, num_floors
-    env_creator = lambda config: chinese_checkers_v0.env(
-        triangle_size=config["triangle_size"],
-        max_iters=config["max_iters"],
-        render_mode=config["render_mode"]
-    )
+    # define how to make the environment. This way takes an optional environment config
+    def env_creator(config):
+        return chinese_checkers_v0.env(**config)
 
     # register that way to make the environment under an rllib name
     env_name = 'chinese_checkers_v0'
+    model_name = 'full_sharing'
     register_env(env_name, lambda config: PettingZooEnv(env_creator(config)))
 
+    test_env = PettingZooEnv(env_creator({"triangle_size": 2}))
+    # test_env = MultiAgentEnvCompatibility(test_env)
+    obs_space = test_env.observation_space["player_0"]
+    act_space = test_env.action_space["player_0"]
+
     ray.init(num_cpus=1 or None, local_mode=True)
-    if args.train:
-        algo = train(env_name, triangle_size=args.triangle_size)
-    elif args.eval_random:
-        eval(triangle_size=args.triangle_size)
-    elif args.eval_self:
-        eval(triangle_size=args.triangle_size)
-    else:
-        print("Did not specify train or eval.")
-        return
+    config = create_config(env_name, args.triangle_size)
+    train_config = {
+        "triangle_size": args.triangle_size,
+        "train_iters": args.train_iters,
+        "eval_period": args.eval_period,
+        "eval_num_trials": args.eval_num_trials,
+        "eval_max_iters": args.eval_max_iters,
+        "render_mode": args.render_mode,
+    }
+    train(config, model_name, train_config)
     print("Finished successfully without selecting invalid actions.")
     ray.shutdown()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog='RLLib train/eval script'
+        prog='RLLib train script'
     )
-    parser.add_argument('--eval_random',
+    parser.add_argument('-t', '--train',
                         action='store_true')  # on/off flag
-    parser.add_argument('--eval_self',
-                        action='store_true')  # on/off flag
-    parser.add_argument('--train',
-                        action='store_true')  # on/off flag
-    parser.add_argument('-s', '--triangle_size', type=int, required=True)
+    parser.add_argument('--train_iters', type=int, default=100)  # on/off flag
+    parser.add_argument('--triangle_size', type=int, required=True)
+    parser.add_argument('--eval_period', type=int, default=5)
+    parser.add_argument('--eval_num_trials', type=int, default=10)
+    parser.add_argument('--eval_max_iters', type=int, default=400)
+    parser.add_argument('--render_mode', type=str, default=None)
     args = parser.parse_args()
     main(args)

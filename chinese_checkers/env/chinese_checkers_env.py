@@ -36,6 +36,9 @@ class raw_env(AECEnv):
         )
         
         self.n = triangle_size
+        self.iters = 0
+        self.num_moves = 0
+        self.winner = None
 
         self.rewards = None
         self.infos = {agent: {} for agent in self.agents}
@@ -71,7 +74,9 @@ class raw_env(AECEnv):
         self.infos = {agent: {} for agent in self.agents}
 
         self.game.init_game()
+        self.iters = 0
         self.num_moves = 0
+        self.winner = None
 
         self._agent_selector = agent_selector(self.agents)
         self.agent_selection = self._agent_selector.next()
@@ -98,6 +103,7 @@ class raw_env(AECEnv):
             }
             for a in self.agents:
                 self.rewards[a] = 10 if a == agent else -1
+            self.winner = agent
         elif move is None:
                 self.rewards[agent] = -1000
         else:            
@@ -118,11 +124,12 @@ class raw_env(AECEnv):
         self._clear_rewards()
 
         if self._agent_selector.is_last():
-            self.num_moves += 1
+            self.iters += 1
             self.truncations = {
-                agent: self.num_moves >= self.max_iters for agent in self.agents
+                agent: self.iters >= self.max_iters for agent in self.agents
             }
-        
+        self.num_moves += 1
+
         # if jump then don't advance the current player
         if move == Move.END_TURN or not (move and move.is_jump):
             self.agent_selection = self._agent_selector.next()
@@ -194,7 +201,6 @@ class raw_env(AECEnv):
     
     def close(self):
         pass
-        
 
 if __name__ == "__main__":
     env = raw_env(4)

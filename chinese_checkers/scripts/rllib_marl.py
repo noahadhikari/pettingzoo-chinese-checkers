@@ -1,8 +1,11 @@
+import csv
 import datetime
 import os
 import numpy as np
 import glob
 import argparse
+from pathlib import Path
+from tqdm import tqdm
 
 from gymnasium.spaces import Box, Discrete
 
@@ -26,7 +29,80 @@ from chinese_checkers.models.action_masking_rlm import TorchActionMaskRLM
 from chinese_checkers.models.action_masking import ActionMaskModel
 from chinese_checkers.scripts.logger import custom_log_creator
 
-def eval(triangle_size: int = 4, policy_name: str = "default_policy", num_games: int = 2, against_self: bool = False, checkpoint_path: str = None, render_mode="human"):
+def write_to_csv(filename, results):
+    path_exists = os.path.exists(filename)
+    with open(filename, "a", newline="") as f:
+        writer = csv.writer(f)
+        if not path_exists:
+            writer.writerow(list(results.keys()))
+        writer.writerow(list(results.values()))
+
+def train(config, model_name: str, train_config):
+    timestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    logdir = f"logs/chinese_checkers_{model_name}_{timestr}"
+    algo = config.build(logger_creator=custom_log_creator(os.path.join(os.curdir, logdir), ''))
+
+    triangle_size = train_config["triangle_size"]
+    train_iters = train_config["train_iters"]
+    eval_period = train_config["eval_period"]
+    print(eval_period)
+    eval_config = {
+        "triangle_size": train_config["triangle_size"],
+        "eval_num_trials": train_config["eval_num_trials"],
+        "eval_max_iters": train_config["eval_max_iters"],
+        "render_mode": train_config["render_mode"],
+        "logdir": logdir
+    }
+
+    # run manual training loop and print results after each iteration
+    for i in range(train_iters):
+        result = algo.train()
+        checkpoint_dir = f"{logdir}/checkpoint{i}"
+        save_result = algo.save(checkpoint_dir=checkpoint_dir)
+        path_to_checkpoint = save_result.checkpoint.path
+        print(
+            "An Algorithm checkpoint has been created inside directory: "
+            f"'{path_to_checkpoint}'."
+        )
+        # print(pretty_print(result))
+        print(f"""
+              Iteration {i}: episode_reward_mean = {result['episode_reward_mean']},
+                             episode_reward_max  = {result['episode_reward_max']},
+                             episode_reward_min  = {result['episode_reward_min']},
+                             episode_len_mean    = {result['episode_len_mean']}
+              """)
+
+        train_results = {
+            "iteration": i,
+            "env_steps": result["num_env_steps_sampled"],
+            "episode_reward_mean": result["episode_reward_mean"],
+            "episode_reward_max": result["episode_reward_max"],
+            "episode_reward_min": result["episode_reward_min"],
+            "episode_len_mean": result["episode_len_mean"]
+        } 
+        for policy_id in range(6):
+            if f"policy_{policy_id}" in result["policy_reward_mean"]:
+                train_results[f"policy_{policy_id}_reward_mean"] = result["policy_reward_mean"][f"policy_{policy_id}"]
+            else:
+                train_results[f"policy_{policy_id}_reward_mean"] = np.nan
+
+        train_logs_path = f"{logdir}/train_logs.csv"
+        write_to_csv(train_logs_path, train_results)
+        
+        policy = None
+        if algo.get_policy("default_policy"):
+            policy = algo.get_policy("default_policy")
+        else:
+            policy = algo.get_policy("policy_0")
+        if i % eval_period == 0:
+            eval_results = { "iteration": i } | evaluate_policy_against_random(policy, eval_config)
+            eval_logs_path = f"{logdir}/eval_logs.csv"
+            write_to_csv(eval_logs_path, eval_results)
+
+        
+    return algo
+
+def eval(policy_name: str = "default_policy", checkpoint_path: str = None, against_self: bool = False, eval_config=None):
     # Evaluate a trained agent vs a random agent
 
     # Use the `from_checkpoint` utility of the Policy class:
@@ -35,24 +111,31 @@ def eval(triangle_size: int = 4, policy_name: str = "default_policy", num_games:
 
     # Use the restored policy for serving actions.
     if against_self:
-        evaluate_policies(policy, policy, triangle_size=triangle_size, num_games=num_games, render_mode=render_mode)
+        evaluate_policies(policy, policy, eval_config)
     else:
-        evaluate_policy_against_random(policy, triangle_size=triangle_size, num_games=num_games, render_mode=render_mode)
+        evaluate_policy_against_random(policy, eval_config)
     
 
-def evaluate_policies(eval_policy, baseline_policy, triangle_size=4, num_games=2, render_mode="human"):
+def evaluate_policies(eval_policy, baseline_policy, eval_config):
     """
     Evaluate two policies against one another. eval_policy will play as player 0, baseline_policy will play as player 1-5.
     """
-    env = chinese_checkers_v0.env(render_mode=render_mode, triangle_size=triangle_size)
+    triangle_size = eval_config["triangle_size"]
+    eval_num_trials = eval_config["eval_num_trials"]
+    eval_max_iters = eval_config["eval_max_iters"]
+    render_mode = eval_config["render_mode"]
+
+    env = chinese_checkers_v0.env(render_mode=render_mode, triangle_size=triangle_size, max_iters=eval_max_iters)
     print(
         f"Starting evaluation of {eval_policy} against baseline {baseline_policy}. Trained agent will play as {env.possible_agents[0]}."
     )
 
     total_rewards = {agent: 0 for agent in env.possible_agents}
     wins = {agent: 0 for agent in env.possible_agents}
+    iters = []
+    num_moves = []
 
-    for i in range(num_games):
+    for i in tqdm(range(eval_num_trials)):
         env.reset(seed=i)
         for a in range(6):
             env.action_space(env.possible_agents[a]).seed(i)
@@ -68,23 +151,38 @@ def evaluate_policies(eval_policy, baseline_policy, triangle_size=4, num_games=2
                 else:
                     action = baseline_policy.compute_single_action(obs)
             act = int(action[0])
-            env.render()
+            if render_mode:
+                env.render()
             env.step(act)
+
+        iters.append(env.unwrapped.iters)
+        num_moves.append(env.unwrapped.num_moves)
 
         # accumulate rewards after game ends
         for agent in env.possible_agents:
             rew = env._cumulative_rewards[agent]
             total_rewards[agent] += rew
-            if rew == 10:
-                wins[agent] += 1
-                
+        if env.unwrapped.winner:
+            wins[env.unwrapped.winner] += 1
+   
     env.close()
 
-    winrate = wins[env.possible_agents[0]] / num_games
+    winrate = wins[env.possible_agents[0]] / eval_num_trials
+    average_rewards = {agent: total_rewards[agent] / eval_num_trials for agent in env.possible_agents}
     print("Total rewards (incl. negative rewards): ", total_rewards)
-    print("Average rewards (incl. negative rewards): ", {agent: total_rewards[agent] / num_games for agent in env.possible_agents})
+    print("Average rewards (incl. negative rewards): ", average_rewards)
     print("Winrate: ", winrate)
+    print("Average iterations:", np.mean(iters))
+    print("Average moves:", np.mean(num_moves))
 
+    return {
+        "eval_num_trials": eval_num_trials,
+        "eval_total_rewards": total_rewards["player_0"],
+        "eval_average_rewards": average_rewards["player_0"],
+        "eval_win_rate": winrate,
+        "eval_average_iters": np.mean(iters),
+        "eval_average_moves": np.mean(num_moves)
+    }
 
 class ChineseCheckersRandomPolicy(Policy):
     def __init__(self, triangle_size=4, config={}):
@@ -104,8 +202,9 @@ class ChineseCheckersRandomPolicy(Policy):
         return self.compute_actions([obs], state_batches=[state], prev_action_batch=[prev_action], prev_reward_batch=[prev_reward], info_batch=[info], episodes=[episode], **kwargs)[0]
 
 
-def evaluate_policy_against_random(policy, triangle_size=4, num_games=2, render_mode="human"):
-    return evaluate_policies(policy, ChineseCheckersRandomPolicy(triangle_size), triangle_size, num_games, render_mode=render_mode)
+def evaluate_policy_against_random(policy, eval_config):
+    triangle_size = eval_config["triangle_size"]
+    return evaluate_policies(policy, ChineseCheckersRandomPolicy(triangle_size), eval_config)
 
 def main(args):
     # define how to make the environment. This way takes an optional environment config, num_floors
@@ -118,10 +217,15 @@ def main(args):
     register_env(env_name, lambda config: PettingZooEnv(env_creator(config)))
 
     ray.init(num_cpus=1 or None, local_mode=True)
+    eval_config = {
+        "triangle_size": args.triangle_size,
+        "eval_num_trials": args.eval_num_trials,
+        "render_mode": "human"
+    }
     if args.eval_random:
-        eval(triangle_size=args.triangle_size, policy_name=args.policy_name, against_self=False, checkpoint_path=args.checkpoint_path)
+        eval(policy_name=args.policy_name, against_self=False, checkpoint_path=args.checkpoint_path, eval_config=eval_config)
     elif args.eval_self:
-        eval(triangle_size=args.triangle_size, policy_name=args.policy_name, against_self=True, checkpoint_path=args.checkpoint_path)
+        eval(policy_name=args.policy_name, against_self=True, checkpoint_path=args.checkpoint_path, eval_config=eval_config)
     else:
         print("Did not specify train or eval.")
         return
@@ -137,7 +241,8 @@ if __name__ == "__main__":
     parser.add_argument('-es', '--eval_self',
                         action='store_true')  # on/off flag
     parser.add_argument('-p', '--policy_name', default="default_policy")
-    parser.add_argument('-s', '--triangle_size', type=int, required=True)
-    parser.add_argument('-c', '--checkpoint_path', type=str, required=False)
+    parser.add_argument('--triangle_size', type=int, required=True)
+    parser.add_argument('--eval_num_trials', type=int, default=10)
+    parser.add_argument('--checkpoint_path', type=str, required=False)
     args = parser.parse_args()
     main(args)
