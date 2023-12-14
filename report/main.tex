@@ -136,7 +136,7 @@ In the objective, the advantage term incentivizes taking actions that are better
 
 We developed a custom PettingZoo environment for Chinese Checkers to support MARL. The board has the same shape as the traditional game, but can be configured to play with different sizes $N$, where $N$ is the side length of one of the corners of the board. For example, the traditional game has $N = 4$ and the $N = 2$ variation that we used for many experiments has 3 pegs per player.
 
-\begin{figure}
+\begin{figure}[h]
   \centering
     \includegraphics[width=0.5\textwidth]{images/boards.png}
   \caption{Game boards of size $N = 2, 3, 4$}
@@ -155,12 +155,12 @@ Unlike games such as chess, which impose turn limits to prevent infinite horizon
 
 In Chinese Checkers, it may be difficult to enumerate all of an agent's possible moves, as jumps increase the number of possible moves significantly. Additionally, within a single move, it is possible to infinitely stall the game by jumping in a cycle.
 
-To prevent this, we adopt the concept of branching actions from complex action spaces in other RL environments \cite{BranchingActions}, where a move consists of one or more submoves that may not end the player's turn immediately. In Chinese Checkers, a submove is a single jump, adjacent-cell movement, or end-turn action. Jump submoves may not necessarily end a player's turn, but to prevent infinite turns, players cannot jump back to a cell they previously occupied on that turn. Players can end their turn following a jump using the end-turn submove.
+To prevent this, we adopt the concept of branching actions from complex action spaces in other RL environments \cite{BranchingActions}, where a move consists of one or more submoves that may not end the player's turn immediately. In Chinese Checkers, a submove is a single jump, adjacent-space movement, or end-turn action. Jump submoves may not necessarily end a player's turn, but to prevent infinite turns, players cannot jump back to a space they previously occupied on that turn. Players can end their turn following a jump using the end-turn submove.
 
 \subsubsection{Board Representation}
 The game board uses cube coordinates, with the center of the board being $(q, r, s) = (0, 0, 0)$.
 
-Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of diagonal length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous cells are then masked out to prevent movement out-of-bounds. 
+Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of diagonal length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous spaces are then masked out to prevent movement out-of-bounds. 
 
 % \begin{center}
 %   \begin{tabular}{|m{0.05\textwidth}|m{0.35\textwidth}|}
@@ -220,7 +220,7 @@ Actions in the Chinese Checkers environment are represented by a tuple $(q, r, \
   \end{tabular}
   \end{center}
 
-  If a previous submove was a jump or if no legal moves are available, a player may also end their turn immediately without a move (known as the end-turn action)  Thus, we represent the action space as a discrete space of size $(4N + 1) \times (4N + 1) \times 6 \times 2 + 1$.
+  If a previous submove was a jump or if no legal moves are available, a player may also end their turn immediately without a move (known as the end-turn action). Thus, we represent the action space as a discrete space of size $(4N + 1) \times (4N + 1) \times 6 \times 2 + 1$.
 
 \subsubsection{Action Masking}
 
@@ -232,9 +232,9 @@ Various reward schemes were tried:
 
 \begin{enumerate}
   \item \textit{Sparse:} $+5N$ for winning, $-N$ for losing, $0$ otherwise
-  \item Sparse reward, plus small \textit{goal bonuses} for entering pegs in the goal ($+0.1$) and penalties for removing them from the goal ($-0.1$)
-  \item Sparse reward, plus tiny \textit{movement bonuses} for moving forward ($+0.001$) and a small penalty for moving backward ($-0.001$)
-  \item \textit{Positive-sum:} $+5N$ for winning, $0$ otherwise, plus goal and movement bonuses
+  \item Sparse reward, plus a small \textit{goal bonus} for entering pegs in the goal ($+0.1$) and penalty for removing them from the goal ($-0.1$)
+  \item Sparse reward, plus a tiny \textit{movement bonus} for moving forward ($+0.001$) and a penalty for moving backward ($-0.001$)
+  \item \textit{Positive-sum:} $+5N$ for winning, $0$ otherwise, plus goal and movement bonuses and penalties
 \end{enumerate}
 
 We found that agents with sparse rewards had difficulty learning, so we ultimately opted for a positive sum, dense reward scheme (4) due to our goals involving self-play.
@@ -431,13 +431,13 @@ For head-to-head matches, we trained each of the three architectures for 100 ite
 
 The fully-shared policy outperforms the other two policies when they are pitted against one another. Over time, the policies also complete games more quickly, indicating more efficient strategies.
 
-We hypothesize that the fully-shared policy is able to take advantage of the homogenous environment to effectively learn six times as quickly compared to the independent approach. We expect the parameter sharing to still perform well in stochastic homogenous environments, but heterogeneous environments will probably not see the same performance gains.
+We hypothesize that the fully-shared policy is able to take advantage of the homogenous environment to effectively learn six times as quickly compared to the independent approach. We expect full parameter sharing to still perform well in stochastic homogenous environments, but heterogeneous environments will probably not see the same performance gains.
 
 \subsection{Exploration}
 
-The distribution of observed states in self-play is not representative of all potential opponent policies. In the context of Chinese checkers, as a self-play agent improves against itself, the board state will tend to follow certain patterns dependent on the learned policy. As a result, out-of-distribution states may harm agent performance during evaluation.
+Distributional shift between training and evaluation is a concern for multi-agent self play. The distribution of observed states in self-play is not representative of all potential opponent policies. In the context of Chinese checkers, as a self-play agent improves, the board state will tend to follow certain patterns dependent on its learned policy. As a result, out-of-distribution states (such as those from a random policy) may harm agent performance during evaluation.
 
-In PPO algorithms, exploration can be encouraged by an entropy coefficient $c$. This entropy term is added to the clipped surrogate objective.
+We hypothesized that encouraging exploration when parameter-shared MARL algorithms are trained in self-play would improve performance in the random agent evaluation. In PPO algorithms, exploration can be encouraged by an entropy coefficient $c$. This entropy term is added to the clipped surrogate objective. However, testing this claim through a hyperparameter sweep on $c$ yielded inconclusive results.
 
 $$
   \mbox{\footnotesize
@@ -445,21 +445,11 @@ $$
   }
 $$
 
-We hypothesized that encouraging exploration when parameter-shared MARL algorithms are trained in self-play would improve performance in the random agent evaluation, but testing this claim by changing $c$ yielded inconclusive results.
-
-PPO agents with full parameter sharing on $c = 0.0, 0.005, 0.01$ were trained for 50 training iterations of 4000 environment steps each and evaluated against random opponents. After convergence, the last 100 evaluation games' lengths were meaned.
+PPO agents with full parameter sharing for $c = 0.0, 0.005, 0.01$ were trained for 50 training iterations of 4000 environment steps each and evaluated against random opponents. The average evaluation game length curves for the different hyperparameter values are shown in \ref{fig:exploration}.
 
 \begin{figure}[h]
 \centering
-  \begin{tabular}{|m{0.10\textwidth}|m{0.22\textwidth}|}
-    \hline
-     & Average game length \\
-    \hline
-    $c = 0.0$ & $19.513$   \\
-    $c = 0.005$ & $18.767$ \\
-    $c = 0.01$ & $19.593$ \\
-    \hline
-  \end{tabular}
+    \includegraphics[width=0.4\textwidth]{images/exploration.png}
   \caption{Effect of varying the entropy coefficient $c$ on average game lengths against random opponents.}\label{fig:exploration}
 \end{figure}
 
