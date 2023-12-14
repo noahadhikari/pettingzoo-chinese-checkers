@@ -408,14 +408,15 @@ Additionally, the game durations during evaluation were shorter for parameter-sh
 A naive strategy for Chinese Checkers could be to move each piece from the home triangle to the target triangle one by one, without jumps. For a board of size $N = 2$, this strategy performs 20 moves. The optimal strategy including jumps would improve this by a couple moves. Interestingly, even when facing opponents that may both harm (e.g. block the target triangle) or help (e.g. increase the potential for jumps), our model is near this hypothetical optimum.
 
 \subsection{Analyzing Policy Strategies}
+
 \begin{figure}[h]
   \centering
     \includegraphics[width=0.47\textwidth]{images/random_heatmap.png}
-  \label{fig:heatmap}
   \caption{Heatmaps for the policy trained through full parameter sharing. These plots show the frequency of different peg locations on the board after some amount of turns have been made. The trained policy plays as red with pegs starting at the top triangle.}
+  \label{fig:heatmap}
 \end{figure}
 
-Although all trained models eventually reach a 100\% win-rate against random players, policies tended to move the pieces to the target zone in an independent fashion: moving one piece first, then the next, and so on. To visualize these patterns, run training checkpoints 100 times against five random policies. During each game, the board states were collected at different numbers of turns. These board states were used to generate heat maps in Figure \ref{fig:heatmap} showing the frequency of pegs throughout the board.
+Although all trained models eventually reach a 100\% win-rate against random players, policies tended to move the pieces to the target zone in an independent fashion: moving one piece first, then the next, and so on. To visualize these patterns, we run training checkpoints 100 times against five random policies. During each game, the board states were collected at different numbers of turns. These board states were used to generate heat maps in Figure \ref{fig:heatmap} showing the frequency of pegs throughout the board.
 
 This behavior seems to be learned early on in training, as shown by Figure \ref{fig:heatmap}. By the 10th iteration, turn 15 shows a high probability that some pegs are still in the home triangle while others have already made it to the target triangle. A similar pattern can still be seen in the 99th training iteration, though at an earlier number of turns. In turn 5, many pegs are still left in the home triangle while others are far down the board.
 
@@ -445,7 +446,7 @@ $$
   }
 $$
 
-PPO agents with full parameter sharing for $c = 0.0, 0.005, 0.01$ were trained for 50 training iterations of 4000 environment steps each and evaluated against random opponents. The average evaluation game length curves for the different hyperparameter values are shown in \ref{fig:exploration}.
+PPO agents with full parameter sharing for $c = 0.0, 0.005, 0.01$ were trained for 50 training iterations of 4000 environment steps each and evaluated against random opponents. The average evaluation game length curves for the different hyperparameter values are shown in Figure \ref{fig:exploration}.
 
 \begin{figure}[h]
 \centering
