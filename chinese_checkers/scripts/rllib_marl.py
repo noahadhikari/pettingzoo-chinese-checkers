@@ -175,6 +175,7 @@ def evaluate_policies(eval_policy, baseline_policy, eval_config):
     print("Average iterations:", np.mean(iters))
     print("Average moves:", np.mean(num_moves))
 
+    print(iters)
     return {
         "eval_num_trials": eval_num_trials,
         "eval_total_rewards": total_rewards["player_0"],
@@ -221,7 +222,7 @@ def main(args):
         "triangle_size": args.triangle_size,
         "eval_max_iters": args.eval_max_iters,
         "eval_num_trials": args.eval_num_trials,
-        "render_mode": "human"
+        "render_mode": None
     }
     if args.eval_random:
         eval(policy_name=args.policy_name, against_self=False, checkpoint_path=args.checkpoint_path, eval_config=eval_config)

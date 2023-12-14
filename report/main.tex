@@ -13,12 +13,8 @@
 
 
 \date{
-    University of California, Berkeley\\[2ex] % affiliation hack
-    December 13, 2023    
-}
-
-\newcommand{\abstractText}{\noindent
-Abstract goes here.
+  % {\small allengu01@berkeley.edu \qquad noahadhikari@berkeley.edu} \\% emails hack
+    {\small University of California, Berkeley\\[2ex]} % affiliation hack
 }
 
 %%%%%%%%%%%%%%%%%
@@ -59,43 +55,60 @@ Abstract goes here.
 \twocolumn[
   \begin{@twocolumnfalse}
     \maketitle
+    
     \begin{abstract}
-      \abstractText
-      \newline
-      \newline
+      We show that multi-agent reinforcement learning (MARL) with full parameter sharing outperforms independent and partially shared architectures in the competitive perfect-information homogenous game of Chinese Checkers. To run our experiments, we develop a new MARL environment: variable-size, six-player Chinese Checkers. This custom environment was developed in PettingZoo and supports all traditional rules of the game including chaining jumps. This is, to the best of our knowledge, the first implementation of Chinese Checkers that remains faithful to the true game.
+
+      Chinese Checkers is difficult to learn due to its large branching factor and potentially infinite horizons. We borrow the concept of branching actions (submoves) from complex action spaces in other RL domains, where a submove may not end a player's turn immediately. This drastically reduces the dimensionality of the action space. Our observation space is inspired by AlphaGo with many binary game boards stacked in a 3D array to encode information.
+
+      We use proximal policy optimization (PPO) to train all of our agents. Our experiments investigate three variations of parameter sharing over our agent's architectures: independent, shared-encoder, and fully-shared. The independent approach involves training six entirely separate agents, each with their own policy. The shared-encoder architecture involves sharing the encoder network between all agents, but each agent having its own policy and value function heads. Our fully-shared variation involves sharing all parameters between all agents. All policies use action masking to avoid illegal moves.
+
+      Our experiments first analyze the performance of these three approaches on our Chinese Checkers environment for board size $N = 2$. We train policies through each of the three variations and evaluate them throughout the progression by simulating games against random opponents. Each random opponent samples a legal move uniformly at random. During evaluation, we introduce two metrics: win rate and game length measured in the number of turns to win.
+
+      We find that all three variations achieve a 100\% win rate against the random opponents. The policy trained through full-parameter sharing achieves these results most efficiently, within the first 50,000 environment steps. The shared encoder model achieves a 100\% win rate soon after while the independent approach lags far behind. Additionally, we look at the metric of game length--how many turns a policy takes to win. In this metric, as well, full parameter sharing trains more efficiently and converges with better performance.
+      
+      For the trained policies, we briefly analyze game strategy and raise concerns over distributional shift in self-play, especially when using parameter sharing. Although our trained policy was still performant against random opponents, many possible states are unexplored through our training methods. Attempts to increase exploration through changing PPO's entropy coefficient led to inconclusive results and did not noticeably improve performance. We attribute the robustness of our trained policies to the fact that they fixate on their own pieces rather than the global board state.
+
+      In the head-to-head-matches, we find that full parameter sharing considerably outperforms the partially-shared and independent architectures at all stages of training.
+      
+      We attribute the increase in performance to the fact that the fully shared model is able to take advantage of the homogenous environment to effectively learn six times as quickly compared to the independent approach. We do not expect the same performance gains in heterogenous environments, but similar methods in stochastic environments may prove effective.
+
+      The PettingZoo environment, training and evaluation logic, and analysis scripts can be found on \href{https://github.com/noahadhikari/pettingzoo-chinese-checkers}{Github}.
     \end{abstract}
+    
+    \vfill
   \end{@twocolumnfalse}
 ]
 
 %%%%%%%%%%%
 % Article %
 %%%%%%%%%%%
-
+\clearpage
+\newpage
 \section{Introduction}
 
 Multi-agent reinforcement learning (MARL) has been a growing topic of interest in recent years \cite{GrowingMARLInterest}. Most prior work in this area has focused on two-player competitive, zero-sum games such as Go \cite{AlphaGo} or positive-sum cooperative games\cite{PositiveSumCoopGames}. Several frameworks and tools have been built to support these environments \cite{PettingZoo} \cite{Gym}. 
 
-The behavior of agents in competitive environments with more than two players is much less well studied \cite{ArticleReference4}. Stochastic games such as poker are popular in this domain \cite{ArticleReference5}, but complete-information environments are not as well studied. In this paper, we develop a custom PettingZoo environment for Chinese Checkers, a six-player competitive homogenous game, as well as study the performance of several MARL architectures on this environment.
-
+The behavior of agents in competitive environments with more than two players is much less well studied \cite{ArticleReference4}. Stochastic games such as poker are popular in this domain, but complete-information environments are not as common, and it is difficult to find out-of-the-box environments for competitive multiplayer complete-information environments. In this paper, we develop a custom PettingZoo environment for Chinese Checkers, a six-player competitive homogenous complete-information game, as well as study the performance of several MARL architectures on this environment.
 
 % chinese checkers citation 1 https://cs229.stanford.edu/proj2016spr/report/003.pdf
 % chinese checkers citation 2 https://arxiv.org/pdf/1903.01747.pdf
-Though reinforcement learning for Chinese Checkers has been explored before \cite{ArticleReference6}, our implementation is, to the best of our knowledge, the first to remain faithful to the true game.
+Though reinforcement learning for Chinese Checkers has been explored before \cite{ChineseCheckersRL1} \cite{ChineseCheckersRL2}, our implementation is, to the best of our knowledge, the first to remain faithful to the true game.
 
 \section{Background}
 
-\subsection{Chinese Checkers Rules}
+\subsection{Chinese Checkers Rules \cite{ChineseCheckersRules}}
 
-Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of differing colors on a star-shaped board as seen in Figure \ref{fig:board}. Each player traditionally has 10 pegs, which are initially placed in the corner of the board closest to them. The goal of the game is to move all of one's pegs to the corner of the board opposite to their starting corner.
+Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of differing colors on a star-shaped board as seen in Figure \ref{fig:boards}. Each player traditionally has 10 pegs, which are initially placed in the corner of the board closest to them. The goal of the game is to move all of one's pegs to the corner of the board opposite to their starting corner.
 
 \subsubsection{Movement}
-The game is played in turns. On a player's turn, they must move one of their pegs to an adjacent empty space, or jump over an adjacent peg of any color to an empty space on the other side. A player may jump over multiple pegs in a single turn in a process known as ``chaining'' \cite{ChainingJumps}. A player can only move their own pegs. Only if a player has no possible moves may they pass their turn entirely.
+The game is played in turns. On a player's turn, they must move one of their pegs to an adjacent empty space, or jump over an adjacent peg of any color to an empty space on the other side. A player may jump over multiple pegs in a single turn. A player can only move their own pegs. Only if a player has no possible moves may they pass their turn entirely.
 
 \subsubsection{Winning}
-The first player to move all of their pegs to the opposite corner wins the game. Though it is possible to continue playing after this point ranking purposes, we focus on the variant where the game is terminated after the first player wins.
+The first player to move all of their pegs to the opposite corner wins the game. Though it is possible to continue playing after this point for ranking purposes, we focus on the variant where the game is terminated after the first player wins.
 
 \subsubsection{Spoiling}
-It is possible for a player to prevent another from winning by continously occupying one of the pegs in their goal corner, in a process known as ``spoiling.'' \cite{ChineseCheckersSpoiling} There are no official rules preventing spoiling, and rules prohibiting it tend to be quite complicated, so we permit it in our implementation.
+It is possible for a player to prevent another from winning by continously occupying one of the pegs in their goal corner, in a process known as ``spoiling.''. There are no official rules preventing spoiling \cite{ChineseCheckersRules}, and rules prohibiting it tend to be quite complicated, so we permit it in our implementation.
 
 \subsection{Hexagonal Coordinate Systems}
 
@@ -105,13 +118,10 @@ One way involves exploiting a symmetry between cubes and hexagons, where each ax
 
 Because of the planar constraint, only two of the three $qrs$-coordinates are necessary. $(q, r)$ is a common choice; this is known as the axial coordinate system.
 
-Figure \ref{fig:hex} shows the relationship between the two coordinate systems.
-
 \subsection{Proximal Policy Optimization (PPO)}
 
 Proximal Policy Optimization\cite{PPO} (PPO) is an on-policy method with an architecture similar to actor-critic algorithms. It addresses stability concerns in traditional actor-critic algorithms by limiting large policy updates. The algorithm accomplishes this through a clipped surrogate objective:
 
-% TODO: HELP idk how to make the font smaller :'( %
   $$
   \mbox{\footnotesize
   $L = \mathbb{E}\left[\min\left(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)} \hat{A_t}, \text{ clip}\left(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)},\, 1 - \epsilon,\, 1 + \epsilon \right) \hat{A_t}\right)\right]$
@@ -124,7 +134,7 @@ In the objective, the advantage term incentivizes taking actions that are better
 
 \subsection{Chinese Checkers Environment}
 
-We developed a custom PettingZoo environment for Chinese Checkers to support MARL. The board has the same shape as the traditional game, but can be configured to play with different sizes $N$, where $N$ is the side length of one of the corners of the board. For example, the traditional game has $N=4$ and the $N = 2$ variation that we used for many experiments has 3 pegs per player.
+We developed a custom PettingZoo environment for Chinese Checkers to support MARL. The board has the same shape as the traditional game, but can be configured to play with different sizes $N$, where $N$ is the side length of one of the corners of the board. For example, the traditional game has $N = 4$ and the $N = 2$ variation that we used for many experiments has 3 pegs per player.
 
 \begin{figure}
   \centering
@@ -143,14 +153,14 @@ Unlike games such as chess, which impose turn limits to prevent infinite horizon
 
 \subsubsection{Submoves}
 
-In Chinese Checkers, it may be difficult to enumerate all of an agent's possible moves, as jumps increase the number of possible moves significantly. Additionally, within a single move, it is possible to infinitely stall the game by jumping in a cycle around one or more pegs as shown in Figure \ref{fig:cycle}.
+In Chinese Checkers, it may be difficult to enumerate all of an agent's possible moves, as jumps increase the number of possible moves significantly. Additionally, within a single move, it is possible to infinitely stall the game by jumping in a cycle.
 
-To prevent this, we adopt the concept of submoves from RL checkers environments \cite{RLCheckers}, where a move consists of one or more submoves that may not end the player's turn immediately. In Chinese Checkers, a submove is a single jump, adjacent-cell movement, or end-turn action. Jump submoves may not necessarily end a player's turn, but to prevent infinite turns, players cannot jump back to a cell they previously occupied on that turn. Players can end their turn following a jump using the end-turn submove.
+To prevent this, we adopt the concept of branching actions from complex action spaces in other RL environments \cite{BranchingActions}, where a move consists of one or more submoves that may not end the player's turn immediately. In Chinese Checkers, a submove is a single jump, adjacent-cell movement, or end-turn action. Jump submoves may not necessarily end a player's turn, but to prevent infinite turns, players cannot jump back to a cell they previously occupied on that turn. Players can end their turn following a jump using the end-turn submove.
 
 \subsubsection{Board Representation}
 The game board uses cube coordinates, with the center of the board being $(q, r, s) = (0, 0, 0)$.
 
-Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of diagonal length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous cells are then masked out. 
+Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of diagonal length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous cells are then masked out to prevent movement out-of-bounds. 
 
 % \begin{center}
 %   \begin{tabular}{|m{0.05\textwidth}|m{0.35\textwidth}|}
@@ -285,8 +295,7 @@ We compare three different policy configurations for the multiple agents: fully-
 
 \subsubsection{Training Procedure}
 
-% TODO: UPDATE CURRICULUM LEARNING THINGY WITH THIS THINGY https://arxiv.org/pdf/2202.10608.pdf
-We trained all three policy configurations using self-play. As the policies are updated, the agents become stronger and thus have stronger opposition, so this algorithm is reminiscient of curriculum learning \cite{CurriculumLearning}. The training algorithm is summarized below:
+We trained all three policy configurations using self-play. As the policies are updated, the agents become stronger and thus have stronger opposition, so this algorithm is reminiscient of curriculum learning \cite{SelfPlayCurriculumLearning}. The training algorithm is summarized below:
 
 % self.lr_schedule = None
 %         self.lr = 5e-5
@@ -374,7 +383,7 @@ We evaluate the performance of trained agents via several metrics.
   \caption{Evaluation procedure}
 \end{algorithm}
 
-\textit{Architectural matches}: Each of the three architectures contributes two agents in a match of six players. The positions of the agents are randomized, and the agents play several games against each other. The number of wins per player and the number of turns taken to win are both recorded.
+\textit{Head-to-head matches}: Each of the three architectures contributes two agents in a match of six players. The positions of the agents are randomized, and the agents play several games against each other. The number of wins per player and the number of turns taken to win are both recorded.
 
 
 \section{Experiments}
@@ -382,14 +391,13 @@ We evaluate the performance of trained agents via several metrics.
 \subsection{Comparison of Multi-Agent Configurations}
 
 
-\begin{figure*}[]
+\begin{figure*}[t]
   \centering
     \includegraphics[width=0.9\textwidth]{images/comparing_marl.png}
   \caption{Evaluation occurred at repeated intervals throughout training for fully-independent, shared-encoder, and fully-shared multi-agent configurations. \textbf{Left:} Win rate of policy against five random policies. \textbf{Middle:} Average game length (turns made by policy). \textbf{Right:} Average rewards.}\label{fig:win_rate_game_length}
 \end{figure*}
 
 First, we compare the different multi-agent setups: fully-independent, shared-encoder, and fully-shared. Each algorithm was trained over 100 iterations of 4000 timesteps each, with evaluation after every timestep. During evaluation, one trained policy would compete for 30 rounds against five random policies until one player wins or 150 turns have been played.
-
 
 From the results in Figure \ref{fig:win_rate_game_length}, we find that as more parameters are shared between the agents, the more efficient our training becomes. Win rate against random opponents is a better metric of model performance compared to average rewards because although longer games are less optimal, they tend to receive larger rewards.
 
@@ -399,39 +407,81 @@ Additionally, the game durations during evaluation were shorter for parameter-sh
 
 A naive strategy for Chinese Checkers could be to move each piece from the home triangle to the target triangle one by one, without jumps. For a board of size $N = 2$, this strategy performs 20 moves. The optimal strategy including jumps would improve this by a couple moves. Interestingly, even when facing opponents that may both harm (e.g. block the target triangle) or help (e.g. increase the potential for jumps), our model is near this hypothetical optimum.
 
-\subsection{Architectural Matches}
-
-\begin{figure*}[]
-  \centering
-    \includegraphics[width=\textwidth]{images/random\_self\_matches.png}
-  \caption{Win rates and game length of all three architectures piloting two randomized players per game throughout training.}\label{fig:archmatches}
-\end{figure*}
-
-For architectural matches, we trained each of the three architectures for 100 iterations of 4000 timesteps each. After each iteration, we evaluated the performance of each policy by having it play 20 games against the other two policy configurations, with a turn limit of 200. Note that truncated games with no winner are not treated as wins for any player, hence the winrates may not sum to 1. The results are shown in Figure \ref{fig:archmatches}.
-
-The fully-shared policy outperforms the other two policies when they are pitted against one another. Over time, the policies also complete games more quickly, indicating more efficient strategies.
-
 \subsection{Analyzing Policy Strategies}
-
-
-\begin{figure*}[]
+\begin{figure}[h]
   \centering
-    \includegraphics[width=0.6\textwidth]{images/random_heatmap.png}
+    \includegraphics[width=0.47\textwidth]{images/random_heatmap.png}
   \label{fig:heatmap}
-  \caption{Heatmaps for the policy trained through full parameter sharing. These plots show the frequency of different peg locations on the board after some amount of turns have been made.}
-\end{figure*}
+  \caption{Heatmaps for the policy trained through full parameter sharing. These plots show the frequency of different peg locations on the board after some amount of turns have been made. The trained policy plays as red with pegs starting at the top triangle.}
+\end{figure}
 
 Although all trained models eventually reach a 100\% win-rate against random players, policies tended to move the pieces to the target zone in an independent fashion: moving one piece first, then the next, and so on. To visualize these patterns, run training checkpoints 100 times against five random policies. During each game, the board states were collected at different numbers of turns. These board states were used to generate heat maps in Figure \ref{fig:heatmap} showing the frequency of pegs throughout the board.
 
-% TODO: make this one big too %
-% TODO: this plot should probably use the same color scale %
-
-
 This behavior seems to be learned early on in training, as shown by Figure \ref{fig:heatmap}. By the 10th iteration, turn 15 shows a high probability that some pegs are still in the home triangle while others have already made it to the target triangle. A similar pattern can still be seen in the 99th training iteration, though at an earlier number of turns. In turn 5, many pegs are still left in the home triangle while others are far down the board.
+
+\subsection{Head-to-Head-to-Head Matches}
+
+For head-to-head matches, we trained each of the three architectures for 100 iterations of 4000 timesteps each. After each iteration, we evaluated the performance of each policy by having it play 20 games against the other two policy configurations, with a turn limit of 200. Note that truncated games with no winner are not treated as wins for any player, hence the winrates may not sum to 1. The results are shown in Figure \ref{fig:archmatches}.
+
+\begin{figure}[h]
+  \centering
+    \includegraphics[width=0.47\textwidth]{images/random\_self\_matches.png}
+  \caption{Win rates and game length of all three architectures piloting two randomized players per game throughout training.}\label{fig:archmatches}
+\end{figure}
+
+The fully-shared policy outperforms the other two policies when they are pitted against one another. Over time, the policies also complete games more quickly, indicating more efficient strategies.
+
+We hypothesize that the fully-shared policy is able to take advantage of the homogenous environment to effectively learn six times as quickly compared to the independent approach. We expect the parameter sharing to still perform well in stochastic homogenous environments, but heterogeneous environments will probably not see the same performance gains.
+
+\subsection{Exploration}
+
+The distribution of observed states in self-play is not representative of all potential opponent policies. In the context of Chinese checkers, as a self-play agent improves against itself, the board state will tend to follow certain patterns dependent on the learned policy. As a result, out-of-distribution states may harm agent performance during evaluation.
+
+In PPO algorithms, exploration can be encouraged by an entropy coefficient $c$. This entropy term is added to the clipped surrogate objective.
+
+$$
+  \mbox{\footnotesize
+  $L = \mathbb{E}[L^{CLIP} + cS(\pi_{\theta}(s_t))]$
+  }
+$$
+
+We hypothesized that encouraging exploration when parameter-shared MARL algorithms are trained in self-play would improve performance in the random agent evaluation, but testing this claim by changing $c$ yielded inconclusive results.
+
+PPO agents with full parameter sharing on $c = 0.0, 0.005, 0.01$ were trained for 50 training iterations of 4000 environment steps each and evaluated against random opponents. After convergence, the last 100 evaluation games' lengths were meaned.
+
+\begin{figure}[h]
+\centering
+  \begin{tabular}{|m{0.10\textwidth}|m{0.22\textwidth}|}
+    \hline
+     & Average game length \\
+    \hline
+    $c = 0.0$ & $19.513$   \\
+    $c = 0.005$ & $18.767$ \\
+    $c = 0.01$ & $19.593$ \\
+    \hline
+  \end{tabular}
+  \caption{Effect of varying the entropy coefficient $c$ on average game lengths against random opponents.}\label{fig:exploration}
+\end{figure}
+
+Due to the variance in game lengths, it was difficult to draw meaningful conclusions about the effect of exploration on parameter sharing approaches to MARL. We posit that the agents may disproportionately fixate on their own pieces rather than the global board state in trying to get to the goal so they are more robust to distributional shift in evaluation.
+
+\subsection{Extension to Larger Boards}
+
+\begin{figure}[h]
+  \centering
+    \includegraphics[width=0.47\textwidth]{images/larger_boards.png}
+  \caption{End game states for boards of size $N = 4$. A full parameter sharing policy trained for 100 iterations plays as red against (\textbf{left}) random opponents and (\textbf{right}) itself.}\label{fig:largerboards}
+\end{figure}
+
+For larger boards $N > 2$, the spoiling mechanic in Chinese Checkers becomes more prominent which prevented good results to compare the different multi-agent schemes. Although we tried experiments on larger boards, pegs would often become stuck or spoil other agents, rendering metrics like win rate less useful because most games end without a winner. Figure \ref{fig:largerboards} shows end game states for $N = 4$.
 
 \section{Conclusion}
 
-\lipsum[1]
+We have introduced a new competitive environment for multi-agent reinforcement learning. On this environment, we showed that even in multi-agent competitive settings, parameter sharing over multiple agents can improve training efficiency and performance. We found that PPO agents trained with full parameter sharing performed the best when using game length as an evaluation metric. A shared encoder training approach also performed better than the fully independent setup. We attribute these performance gains to the homogenous environment, for which parameter sharing is particularly well-suited.
+
+\subsection{Group Contributions}
+
+We collaboratively developed the PettingZoo Chinese checkers environment and MARL training and evaluation logic during synchronous work sessions. We also worked together on all sections of the report. \textbf{Noah Adhikari} extended the evaluation framework to compare the trained agents in head-to-head gameplay. \textbf{Allen Gu} analyzed the performance of the independent, shared-encoder, and fully-shared methods in play against random opponents and also coded the heatmap plotting to analyze the policies.
 
 %%%%%%%%%%%%%%
 % References %
