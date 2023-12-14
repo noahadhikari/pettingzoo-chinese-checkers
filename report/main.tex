@@ -91,11 +91,11 @@ Chinese Checkers is a game traditionally played with 2, 3, 4, or 6 players of di
 \subsubsection{Movement}
 The game is played in turns. On a player's turn, they must move one of their pegs to an adjacent empty space, or jump over an adjacent peg of any color to an empty space on the other side. A player may jump over multiple pegs in a single turn in a process known as ``chaining'' \cite{ChainingJumps}. A player can only move their own pegs. Only if a player has no possible moves may they pass their turn entirely.
 
-\subsubsection{Spoiling}
-It is possible for a player to prevent another from winning by continously occupying one of the pegs in their goal corner, in a process known as ``spoiling.'' \cite{ChineseCheckersSpoiling} There are no official rules preventing spoiling, and rules prohibiting it tend to be quite complicated, so we permit it in our implementation.
-
 \subsubsection{Winning}
 The first player to move all of their pegs to the opposite corner wins the game. Though it is possible to continue playing after this point ranking purposes, we focus on the variant where the game is terminated after the first player wins.
+
+\subsubsection{Spoiling}
+It is possible for a player to prevent another from winning by continously occupying one of the pegs in their goal corner, in a process known as ``spoiling.'' \cite{ChineseCheckersSpoiling} There are no official rules preventing spoiling, and rules prohibiting it tend to be quite complicated, so we permit it in our implementation.
 
 \subsection{Hexagonal Coordinate Systems}
 
@@ -109,20 +109,22 @@ Figure \ref{fig:hex} shows the relationship between the two coordinate systems.
 
 \subsection{Proximal Policy Optimization (PPO)}
 
-Proximal Policy Optimization\cite{PPO} (PPO) is an on-policy method with an architecture similar to actor-critic algorithms. However, it addresses stability concerns in traditional actor-critic algorithms by limiting large policy updates. The algorithm accomplishes this through a clipped surrogate objective.
+Proximal Policy Optimization\cite{PPO} (PPO) is an on-policy method with an architecture similar to actor-critic algorithms. It addresses stability concerns in traditional actor-critic algorithms by limiting large policy updates. The algorithm accomplishes this through a clipped surrogate objective:
 
 % TODO: HELP idk how to make the font smaller :'( %
-\begin{align*}
-  L = \mathbb{E}[\min(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)} \hat{A_t}, \text{clip}(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)}, 1 - \epsilon, 1 + \epsilon) \hat{A_t})]
-\end{align*}
+  $$
+  \mbox{\footnotesize
+  $L = \mathbb{E}\left[\min\left(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)} \hat{A_t}, \text{ clip}\left(\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)},\, 1 - \epsilon,\, 1 + \epsilon \right) \hat{A_t}\right)\right]$
+  }
+  $$
 
-In the objective, the advantage terms incentivizes taking actions that are better than average. The ratio $\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)}$ is a measure of how far the new policy deviates from the previous one. By clipping and minimizing with the non-clipped ratio, the objective also deters making large changes to the policy. 
+In the objective, the advantage term incentivizes taking actions that are better than average. The ratio $\frac{\pi(a_t | s_t)}{\pi_{\text{old}}(a_t | s_t)}$ is a measure of how far the new policy deviates from the previous one. By clipping and minimizing with the non-clipped ratio, the objective also deters making large changes to the policy. 
 
 \section{Methods}
 
 \subsection{Chinese Checkers Environment}
 
-We developed a custom PettingZoo environment for Chinese Checkers to support MARL. The board has the same shape as the traditional game, but can be configured to play with different sizes $N$. For example, the $N = 2$ variation that we used for many experiments has 3 pegs per player. In axial coordinates, this board can be represented by a 2D array of size $(4N + 1, 4N + 1)$ because an axis through the center of the board has $4N + 1$ slots.
+We developed a custom PettingZoo environment for Chinese Checkers to support MARL. The board has the same shape as the traditional game, but can be configured to play with different sizes $N$, where $N$ is the side length of one of the corners of the board. For example, the traditional game has $N=4$ and the $N = 2$ variation that we used for many experiments has 3 pegs per player.
 
 \begin{figure}
   \centering
@@ -137,7 +139,7 @@ For simplicity, we focus on the 6-player variant of Chinese Checkers as we wante
 
 \subsubsection{Turn Limits}
 
-Unlike games such as chess, which impose turn limits to prevent infinite horizons \cite{ChessTurnLimit}, Chinese Checkers has no such rules. We impose a turn limit that ends the game with no winners after a large, configurable amount of turns (we found $\approx 1000$ to be a good choice for $N=4$).
+Unlike games such as chess, which impose turn limits to prevent infinite horizons \cite{ChessTurnLimit}, Chinese Checkers has no such rules. We impose a turn limit that ends the game with no winners after a large, configurable amount of turns (we found $\approx 200$ to be a good choice for $N=2$ and $\approx 1000$ to be a good choice for $N=4$).
 
 \subsubsection{Submoves}
 
@@ -146,7 +148,7 @@ In Chinese Checkers, it may be difficult to enumerate all of an agent's possible
 To prevent this, we adopt the concept of submoves from RL checkers environments \cite{RLCheckers}, where a move consists of one or more submoves that may not end the player's turn immediately. In Chinese Checkers, a submove is a single jump, adjacent-cell movement, or end-turn action. Jump submoves may not necessarily end a player's turn, but to prevent infinite turns, players cannot jump back to a cell they previously occupied on that turn. Players can end their turn following a jump using the end-turn submove.
 
 \subsubsection{Board Representation}
-We represent variable board size as $N$, where $N$ represents the side lengths of one of the triangular corners of the board (so $N=4$ is traditional Chinese Checkers). The game board uses cube coordinates, with the center of the board being $(q, r, s) = (0, 0, 0)$.
+The game board uses cube coordinates, with the center of the board being $(q, r, s) = (0, 0, 0)$.
 
 Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of side length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous cells are then masked out. We assign integer values to cells as follows:
 
@@ -338,42 +340,41 @@ We trained all three policy configurations using self-play. As the policies are 
 
 We evaluate the performance of trained agents via several metrics.
 
-\textit{Random agent evaluation}: The evaluated agent plays against a field of random agents. The number of wins and the number of turns taken to win are both recorded and can be used for evaluation purposes.
+\textit{Random agent evaluation}: The evaluated agent plays against a field of random agents. The number of wins and the number of turns taken to win are both recorded.
 
 \begin{algorithm}
   \SetKwInOut{Input}{Input}
   \SetKwInOut{Output}{Output}
   \SetKwFor{RepTimes}{repeat}{times}{end}
 
-  \textbf{function} evaluate (n, policy)
+  \textbf{function} evaluate (n, policies)
 
   \Indp
   
   \Input{\textit{n}: Number of evaluation games \\
-         \textit{policy}: Policy configuration}
-  \Output{\textit{wins}: Number of wins during evaluation play \\
-          \textit{turns}: Average number of turns to win}
-  
-  Initialize player 0 to follow the given policy
-  
-  Initialize players 1-5 to follow a random policy
+         \textit{policies}: Six configurations}
+  \Output{\textit{wins}: Number of wins for each policy \\
+          \textit{lengths}: Game lengths}
 
   \RepTimes{n} {
     Play a game with the given policies
 
-    Record whether the game was a win
+    Record whether the game was a win for each policy into \textit{wins}
 
-    Record the number of turns taken
+    Record the number of turns taken for the game to terminate into \textit{lengths}
   }
 
+  \Return{wins, lengths}
+
   \Indm
+
   \textbf{end}
-  \caption{Evaluation procedure against random agents}
+
+  
+  \caption{Evaluation procedure}
 \end{algorithm}
 
-\textit{Team matches}: Each of the three architectures contributes two agents in a match of six players. The positions of the agents are randomized, and the agents play a game against each other. The number of wins and the number of turns taken to win are both recorded and can be used for evaluation purposes.
-
-
+\textit{Architectural matches}: Each of the three architectures contributes two agents in a match of six players. The positions of the agents are randomized, and the agents play several games against each other. The number of wins per player and the number of turns taken to win are both recorded.
 
 
 \section{Experiments}
@@ -387,8 +388,7 @@ First, we compare the different multi-agent setups: fully-independent, shared-en
   \centering
     \includegraphics[width=0.47\textwidth]{images/winrate.png}
     \includegraphics[width=0.47\textwidth]{images/game_length.png}
-  \label{fig:winrate}
-  \caption{Win rate when evaluated against five random policies. Evaluation occurred at repeated intervals throughout training for fully-independent, shared-encoder, and fully-shared multi-agent configurations.}
+  \caption{Win rate when evaluated against five random policies. Evaluation occurred at repeated intervals throughout training for fully-independent, shared-encoder, and fully-shared multi-agent configurations.}\label{fig:winrate}
 \end{figure}
 
 From the results in Figure \ref{fig:winrate}, we find that as more parameters are shared between the agents, the more efficient our training becomes. Full parameter sharing reached over a 90\% winrate in less than 50,000 environment steps of training while the fully-independent algorithm took almost 200,000 environment steps.
@@ -396,6 +396,15 @@ From the results in Figure \ref{fig:winrate}, we find that as more parameters ar
 Additionally, the game durations during evaluation were shorter for parameter-sharing methods. The policy trained through a fully-shared approach was able to win in fewer turns, where one turn consists of all moves made by a single player before allowing the next player to act. From Figure \ref{fig:game_length}, full parameter sharing converges to a policy that wins in nearly 20 moves, faster than the other two approaches.
 
 A naive strategy for Chinese checkers could be to move each piece from the home triangle to the target triangle one by one, without jumps. For a board of size $N = 2$, this strategy performs 20 moves. The optimal strategy including jumps would improve this by a couple moves. Interestingly, even when facing opponents that may both harm (e.g. block the target triangle) or help (e.g. increase the potential for jumps), our model is near this hypothetical optimum.
+
+\subsection{Architectural Matches}
+
+\begin{figure}[ht]
+  \centering
+    \includegraphics[width=0.47\textwidth]{images/random\_self\_matches.png}
+  \caption{Win rates and game length of all three architectures piloting two randomized players per game throughout training.}\label{fig:archmatches}
+\end{figure}
+
 
 \subsection{Training Convergence}
 
