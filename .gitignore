@@ -360,10 +360,6 @@ dmypy.json
 # to prevent recompilation
 **/main.pdf
 
-# Exam stuff
-exams/*.pdf
-exams/*.bin
-
 logs/*
 logs*/
 *.zip
