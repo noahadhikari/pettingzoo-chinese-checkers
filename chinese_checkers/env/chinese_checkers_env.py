@@ -132,8 +132,8 @@ class raw_env(AECEnv):
         # if jump then don't advance the current player
         if move == Move.END_TURN or not (move and move.is_jump):
             self.agent_selection = self._agent_selector.next()
-        elif self._agent_selector.is_last():
-            self.iters += 1
+            if self._agent_selector.is_last():
+                self.iters += 1
 
     def render(self):
         if self.render_mode is None:

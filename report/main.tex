@@ -73,7 +73,7 @@ Abstract goes here.
 
 \section{Introduction}
 
-Multi-agent reinforcement learning (MARL) has been a growing topic of interest in recent years \cite{ArticleReference1}. Most prior work in this area has focused on two-player competitive, zero-sum games such as Go \cite{ArticleReference2} or positive-sum cooperative games\cite{ArticleReference3}. Several frameworks and tools have been built to support these environments \cite{PettingZoo} \cite{Gym}. 
+Multi-agent reinforcement learning (MARL) has been a growing topic of interest in recent years \cite{GrowingMARLInterest}. Most prior work in this area has focused on two-player competitive, zero-sum games such as Go \cite{AlphaGo} or positive-sum cooperative games\cite{PositiveSumCoopGames}. Several frameworks and tools have been built to support these environments \cite{PettingZoo} \cite{Gym}. 
 
 The behavior of agents in competitive environments with more than two players is much less well studied \cite{ArticleReference4}. Stochastic games such as poker are popular in this domain \cite{ArticleReference5}, but complete-information environments are not as well studied. In this paper, we develop a custom PettingZoo environment for Chinese Checkers, a six-player competitive homogenous game, as well as study the performance of several MARL architectures on this environment.
 
@@ -150,24 +150,24 @@ To prevent this, we adopt the concept of submoves from RL checkers environments 
 \subsubsection{Board Representation}
 The game board uses cube coordinates, with the center of the board being $(q, r, s) = (0, 0, 0)$.
 
-Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of side length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous cells are then masked out. We assign integer values to cells as follows:
+Note that due to the star-shaped nature of the board, it is difficult to represent the board as a perfect hexagon. To circumvent this, we simply treat the board as a hexagon of diagonal length $(4N+1)$, which corresponds to a circumscibed hexagon about the star. Extraneous cells are then masked out. 
 
-\begin{center}
-  \begin{tabular}{|m{0.05\textwidth}|m{0.35\textwidth}|}
-    \hline
-    Value & Description \\
-    \hline
-    -2 & Out-of-bounds \\
-    -1 & Empty \\
-    0 & Player 0 (red peg) \\
-    1 & Player 1 (black peg) \\
-    2 & Player 2 (yellow peg) \\
-    3 & Player 3 (green peg) \\
-    4 & Player 4 (blue peg) \\
-    5 & Player 5 (white peg) \\
-    \hline
-  \end{tabular}
-  \end{center}
+% \begin{center}
+%   \begin{tabular}{|m{0.05\textwidth}|m{0.35\textwidth}|}
+%     \hline
+%     Value & Description \\
+%     \hline
+%     -2 & Out-of-bounds \\
+%     -1 & Empty \\
+%     0 & Player 0 (red peg) \\
+%     1 & Player 1 (black peg) \\
+%     2 & Player 2 (yellow peg) \\
+%     3 & Player 3 (green peg) \\
+%     4 & Player 4 (blue peg) \\
+%     5 & Player 5 (white peg) \\
+%     \hline
+%   \end{tabular}
+% \end{center}
 
 For symmetry, we rotate the board so that the current player's home triangle is at the top of the board when making moves. 
   
@@ -270,7 +270,7 @@ All agents learn through Proximal Policy Optimization (PPO) with a clipped surro
 
 \textbf{Encoder Network:} The encoder network takes in a vector the size of the observation space as input. Each encoder contains a hidden layer of size 64 and output layer of size 64, with ReLU activation functions.
 
-\textbf{Policy Head:} The policy head is a single fully connected network of shape $(64, 12(4N + 1)^2 + 1)$ that takes the encoder output as input and outputs action logits.
+\textbf{Policy Head:} The policy head is a single fully connected network of shape $(64, (4N + 1) \times (4N + 1) \times 6 \times 2 + 1)$ that takes the encoder output as input and outputs action logits.
 
 \textbf{Value Function Head:} The value function head is a single fully connected network of shape $(64, 1)$ that takes the encoder output as input and outputs a scalar estimating the value of the state.
 
@@ -327,7 +327,7 @@ We trained all three policy configurations using self-play. As the policies are 
   \RepTimes{n} {
     Sample a batch of experiences by playing against the other policies
 
-    Update the policies using PPO
+    Update the models using PPO
   }
 
   \Indm
@@ -381,54 +381,53 @@ We evaluate the performance of trained agents via several metrics.
 
 \subsection{Comparison of Multi-Agent Configurations}
 
+
+\begin{figure*}[]
+  \centering
+    \includegraphics[width=0.9\textwidth]{images/comparing_marl.png}
+  \caption{Evaluation occurred at repeated intervals throughout training for fully-independent, shared-encoder, and fully-shared multi-agent configurations. \textbf{Left:} Win rate of policy against five random policies. \textbf{Middle:} Average game length (turns made by policy). \textbf{Right:} Average rewards.}\label{fig:win_rate_game_length}
+\end{figure*}
+
 First, we compare the different multi-agent setups: fully-independent, shared-encoder, and fully-shared. Each algorithm was trained over 100 iterations of 4000 timesteps each, with evaluation after every timestep. During evaluation, one trained policy would compete for 30 rounds against five random policies until one player wins or 150 turns have been played.
 
-% TODO: how do you make these two figures go side by side across columns instead of on one column %
-\begin{figure}[ht]
-  \centering
-    \includegraphics[width=0.47\textwidth]{images/winrate.png}
-    \includegraphics[width=0.47\textwidth]{images/game_length.png}
-  \caption{Win rate when evaluated against five random policies. Evaluation occurred at repeated intervals throughout training for fully-independent, shared-encoder, and fully-shared multi-agent configurations.}\label{fig:winrate}
-\end{figure}
 
-From the results in Figure \ref{fig:winrate}, we find that as more parameters are shared between the agents, the more efficient our training becomes. Full parameter sharing reached over a 90\% winrate in less than 50,000 environment steps of training while the fully-independent algorithm took almost 200,000 environment steps.
+From the results in Figure \ref{fig:win_rate_game_length}, we find that as more parameters are shared between the agents, the more efficient our training becomes. Win rate against random opponents is a better metric of model performance compared to average rewards because although longer games are less optimal, they tend to receive larger rewards.
 
-Additionally, the game durations during evaluation were shorter for parameter-sharing methods. The policy trained through a fully-shared approach was able to win in fewer turns, where one turn consists of all moves made by a single player before allowing the next player to act. From Figure \ref{fig:game_length}, full parameter sharing converges to a policy that wins in nearly 20 moves, faster than the other two approaches.
+Full parameter sharing reached over a 90\% winrate in less than 50,000 environment steps of training while the fully-independent algorithm took almost 200,000 environment steps. Note that the winrate of an algorithm excludes games that were truncated due to the turn limit.
 
-A naive strategy for Chinese checkers could be to move each piece from the home triangle to the target triangle one by one, without jumps. For a board of size $N = 2$, this strategy performs 20 moves. The optimal strategy including jumps would improve this by a couple moves. Interestingly, even when facing opponents that may both harm (e.g. block the target triangle) or help (e.g. increase the potential for jumps), our model is near this hypothetical optimum.
+Additionally, the game durations during evaluation were shorter for parameter-sharing methods. The policy trained through a fully-shared approach was able to win in fewer turns, where one turn consists of all moves made by a single player before allowing the next player to act. From Figure \ref{fig:win_rate_game_length}, full parameter sharing converges to a policy that wins in nearly 20 moves, faster than the other two approaches.
+
+A naive strategy for Chinese Checkers could be to move each piece from the home triangle to the target triangle one by one, without jumps. For a board of size $N = 2$, this strategy performs 20 moves. The optimal strategy including jumps would improve this by a couple moves. Interestingly, even when facing opponents that may both harm (e.g. block the target triangle) or help (e.g. increase the potential for jumps), our model is near this hypothetical optimum.
 
 \subsection{Architectural Matches}
 
-% \begin{figure}[ht]
-%   \centering
-%     \includegraphics[width=0.47\textwidth]{images/random\_self\_matches.png}
-%   \caption{Win rates and game length of all three architectures piloting two randomized players per game throughout training.}\label{fig:archmatches}
-% \end{figure}
+\begin{figure*}[]
+  \centering
+    \includegraphics[width=\textwidth]{images/random\_self\_matches.png}
+  \caption{Win rates and game length of all three architectures piloting two randomized players per game throughout training.}\label{fig:archmatches}
+\end{figure*}
+
+For architectural matches, we trained each of the three architectures for 100 iterations of 4000 timesteps each. After each iteration, we evaluated the performance of each policy by having it play 20 games against the other two policy configurations, with a turn limit of 200. Note that truncated games with no winner are not treated as wins for any player, hence the winrates may not sum to 1. The results are shown in Figure \ref{fig:archmatches}.
+
+The fully-shared policy outperforms the other two policies when they are pitted against one another. Over time, the policies also complete games more quickly, indicating more efficient strategies.
+
+\subsection{Analyzing Policy Strategies}
 
 
-\subsection{Training Convergence}
+\begin{figure*}[]
+  \centering
+    \includegraphics[width=0.6\textwidth]{images/random_heatmap.png}
+  \label{fig:heatmap}
+  \caption{Heatmaps for the policy trained through full parameter sharing. These plots show the frequency of different peg locations on the board after some amount of turns have been made.}
+\end{figure*}
 
-Although all trained models eventually reach a 100\% win-rate against random players, the models can still improve their strategies. For example, all models seem to move the pieces to the target zone in an independent fashion: moving one piece first, then the next, and so on. A better approach could be to collaborate and create jump opportunities for the other pegs to advance.
+Although all trained models eventually reach a 100\% win-rate against random players, policies tended to move the pieces to the target zone in an independent fashion: moving one piece first, then the next, and so on. To visualize these patterns, run training checkpoints 100 times against five random policies. During each game, the board states were collected at different numbers of turns. These board states were used to generate heat maps in Figure \ref{fig:heatmap} showing the frequency of pegs throughout the board.
 
 % TODO: make this one big too %
 % TODO: this plot should probably use the same color scale %
 
-\begin{figure}[ht]
-  \centering
-    \includegraphics[width=0.47\textwidth]{images/random_heatmap.png}
-  \label{fig:heatmap}
-  \caption{Heatmaps for the policy trained through full parameter sharing. These plots show the frequency of different peg locations on the board after a varying amount of turns have been made.}
-\end{figure}
 
-To understand the strategy that policies learn in training, various checkpoints from training were run 100 times against five random opponents. During each game, the board states were collected at different numbers of turns. These board states were used to generate heat maps showing the frequency of pegs throughout the board.
-
-This behavior seems to be learned early on in training, as shown by Figure \ref{fig:heatmap}. By the 10th iteration, we see in later turns like turn 15 that there is a high probability that some pegs are still in the home triangle while others have already made it to the target triangle. A similar pattern can still be seen on the 99th training iteration. Although we see it earlier, by turn 5, many pegs are still left in the home triangle while others are far down the board.
-
-
-
-\section{Discussion}
-
-\lipsum[1]
+This behavior seems to be learned early on in training, as shown by Figure \ref{fig:heatmap}. By the 10th iteration, turn 15 shows a high probability that some pegs are still in the home triangle while others have already made it to the target triangle. A similar pattern can still be seen in the 99th training iteration, though at an earlier number of turns. In turn 5, many pegs are still left in the home triangle while others are far down the board.
 
 \section{Conclusion}
 
