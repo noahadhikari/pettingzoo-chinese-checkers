@@ -27,7 +27,7 @@ from chinese_checkers.models.action_masking import ActionMaskModel
 from chinese_checkers.scripts.logger import custom_log_creator
 from chinese_checkers.scripts.rllib_marl import train
 
-def create_config(env_name: str, triangle_size: int = 4):
+def create_config(env_name: str, triangle_size: int = 4, entropy_coeff: float = 0.0):
     rlm_class = TorchActionMaskRLM
 
     model_config = {
@@ -71,7 +71,8 @@ def create_config(env_name: str, triangle_size: int = 4):
             # use_gae=True,
             # clip_param=0.4,
             # grad_clip=None,
-            # entropy_coeff=0.1,
+            entropy_coeff=entropy_coeff,
+            # entropy_coeff_schedule = None,
             # vf_loss_coeff=0.25,
             # sgd_minibatch_size=64,
             # num_sgd_iter=10,
@@ -99,7 +100,7 @@ def main(args):
 
     # register that way to make the environment under an rllib name
     env_name = 'chinese_checkers_v0'
-    model_name = 'full_sharing'
+    model_name = f'full_sharing{args.entropy_coeff}'
     register_env(env_name, lambda config: PettingZooEnv(env_creator(config)))
 
     test_env = PettingZooEnv(env_creator({"triangle_size": 2}))
@@ -108,10 +109,11 @@ def main(args):
     act_space = test_env.action_space["player_0"]
 
     ray.init(num_cpus=1 or None, local_mode=True)
-    config = create_config(env_name, args.triangle_size)
+    config = create_config(env_name, args.triangle_size, args.entropy_coeff)
     train_config = {
         "triangle_size": args.triangle_size,
         "train_iters": args.train_iters,
+        "entropy_coeff": args.entropy_coeff,
         "eval_period": args.eval_period,
         "eval_num_trials": args.eval_num_trials,
         "eval_max_iters": args.eval_max_iters,
@@ -132,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument('--eval_period', type=int, default=5)
     parser.add_argument('--eval_num_trials', type=int, default=10)
     parser.add_argument('--eval_max_iters', type=int, default=400)
+    parser.add_argument('--entropy_coeff', type=float, default=0)
     parser.add_argument('--render_mode', type=str, default=None)
     args = parser.parse_args()
     main(args)

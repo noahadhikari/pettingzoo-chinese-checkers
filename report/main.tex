@@ -351,9 +351,9 @@ We evaluate the performance of trained agents via several metrics.
 
   \Indp
   
-  \Input{\textit{n}: Number of evaluation games \\
+  \Input{\textit{n}: Number of games \\
          \textit{policies}: Six configurations}
-  \Output{\textit{wins}: Number of wins for each policy \\
+  \Output{\textit{wins}: Wins per policy \\
           \textit{lengths}: Game lengths}
 
   \RepTimes{n} {
@@ -399,11 +399,11 @@ A naive strategy for Chinese checkers could be to move each piece from the home 
 
 \subsection{Architectural Matches}
 
-\begin{figure}[ht]
-  \centering
-    \includegraphics[width=0.47\textwidth]{images/random\_self\_matches.png}
-  \caption{Win rates and game length of all three architectures piloting two randomized players per game throughout training.}\label{fig:archmatches}
-\end{figure}
+% \begin{figure}[ht]
+%   \centering
+%     \includegraphics[width=0.47\textwidth]{images/random\_self\_matches.png}
+%   \caption{Win rates and game length of all three architectures piloting two randomized players per game throughout training.}\label{fig:archmatches}
+% \end{figure}
 
 
 \subsection{Training Convergence}

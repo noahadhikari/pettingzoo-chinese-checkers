@@ -367,5 +367,4 @@ exams/*.bin
 logs/*
 logs*/
 *.zip
-*.png
 checkpoints/*
