@@ -1,10 +1,13 @@
 # CS 285 Final Project - Fall 2023
 
-<div align="center" width="100%">
-<img src="assets/self_play.gif" alt="Self Play MARL" style="display:block;float:none;margin-left:auto;margin-right:auto;width:250"/>
+<p align="center">
+<img src="assets/self_play.gif" alt="Self Play MARL" style="display:block;float:none;margin-left:auto;margin-right:auto;width:300px"/>
+</p>
+
+<p align="center" width="100%">
 <i>Self-play of a PPO agent trained with full parameter sharing on our custom Chinese Checkers environment. 
 </i>
-</div>
+</p>
 
 <br>
 
